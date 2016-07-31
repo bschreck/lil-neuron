@@ -10,6 +10,7 @@ Pronunciation features:
 import pronouncing as pron
 import numpy as np
 from itertools import izip_longest
+import pdb
 
 
 class RapFeatureExtractor(object):
@@ -28,8 +29,8 @@ class RapFeatureExtractor(object):
                                   self.stressed_phonemes,
                                   self.word_phonemes,
                                   self.phrase_phonemes,
-                                  self.rhyme_scheme]
-        self.word_feature_set = [self.raw_words]
+                                  self.word_group_rhyme_scheme]
+        self.word_feature_set = [self.raw_words, self.word_rhyme_scheme]
 
     @classmethod
     def find_shape(cls, seq):
@@ -83,16 +84,18 @@ class RapFeatureExtractor(object):
             shape_song_phones = song_as_phonemes.shape
             shape_phone_features = tuple([len(self.phone_feature_set)] + list(shape_song_phones[:-1]))
             song_phone_features = -1 * np.ones(shape_phone_features, dtype=np.int64)
-            # for i, feature_extractor in enumerate(self.phone_feature_set):
-                # feature = feature_extractor(song_as_phonemes)
-                # song_phone_features[i, :] = feature
+            for i, feature_extractor in enumerate(self.phone_feature_set):
+                feature = feature_extractor(song_as_phonemes)
+                if feature is not None:
+                    song_phone_features[i, :] = feature
 
             shape_song_words = song_as_ints.shape
             shape_word_features = tuple([len(self.word_feature_set)] + list(shape_song_words))
             song_word_features = -1 * np.ones(shape_word_features, dtype=np.int64)
             for i, feature_extractor in enumerate(self.word_feature_set):
                 feature = feature_extractor(song_as_ints)
-                song_word_features[i, :] = feature
+                if feature is not None:
+                    song_word_features[i, :] = feature
             self.serialize_and_write_to_disk(song_word_features, song_phone_features)
 
     def extract_phonemes(self, song):
@@ -125,31 +128,83 @@ class RapFeatureExtractor(object):
         print words_arr
         return phones_arr, words_arr
 
+    def get_phone_feat_name(self, feat_index):
+        return self.get_feat_name(self.phone_feature_set, feat_index)
+
+    def get_word_feat_name(self, feat_index):
+        return self.get_feat_name(self.word_feature_set, feat_index)
+
+    def get_feat_name(self, feature_set, feat_index):
+        return feature_set[feat_index].__name__.upper().replace('_', ' ')
 
     def serialize_and_write_to_disk(self, song_word_features, song_phone_features):
         print "="*50, "SONG", "="*50
-        for feat in song_word_features:
-            print "------FEATURE------"
+        for i, feat in enumerate(song_word_features):
+            feat_name = self.get_word_feat_name(i)
+            print "------FEATURE {}------",format(feat_name)
             print feat
 
     def raw_words(self, song):
         return song
 
     def stresses(self, phonemes):
-        phone_shape = list(phonemes.shape)
-        just_stresses_shape = phone_shape[:-1] + [1]
-        return phonemes[just_stresses_shape]
+        return phonemes[...,1]
 
     def raw_phonemes(self, phonemes):
-        phone_shape = list(phonemes.shape)
-        just_phones_shape = phone_shape[:-1] + [0]
-        return phonemes[just_phones_shape]
+        return phonemes[...,0]
 
     def stressed_phonemes(self, phonemes):
+        # ?
         pass
     def word_phonemes(self, phonemes):
         pass
     def phrase_phonemes(self, phonemes):
         pass
-    def rhyme_scheme(self, phonemes):
+    def word_group_rhyme_scheme(self, phonemes):
         pass
+
+    def word_rhyme_scheme(self, song, num_phrases=4):
+        """
+        Find rhymes by greedily searching ahead for words up to
+        num_phrases forward for a rhyme, and
+        and labeling words found with either a rhyme, or -1 if no
+        rhyme is found.
+        """
+        rhymes = song[...]
+        max_current_rhyme = -1
+        for p, phrase in enumerate(song):
+            for w, word in enumerate(phrase):
+                if word == -1:
+                    continue
+                max_current_rhyme = self.find_and_label_rhymes(word, p, w,
+                                                               song[p:p + num_phrases, :],
+                                                               rhymes,
+                                                               max_current_rhyme)
+        return rhymes
+
+    def find_and_label_rhymes(self, word_int, p, w, to_search, rhymes,
+                              max_current_rhyme):
+        word = self.int_to_word[word_int]
+        prev_max_rhyme_num = max_current_rhyme
+        current_rhyme_num = -1
+        if rhymes[p, w] > -1:
+            current_rhyme_num = rhymes[p, w]
+        for new_p, phrase in enumerate(to_search):
+            if new_p == 0:
+                start_from = w + 1
+            else:
+                start_from = 0
+            for pw, potential_word_int in enumerate(phrase[start_from:]):
+                if potential_word_int == -1:
+                    continue
+                potential_word = self.int_to_word[potential_word_int]
+                if potential_word in pron.rhymes(word):
+                    if current_rhyme_num > -1:
+                        rhymes[p + new_p, start_from + pw] = current_rhyme_num
+                    else:
+                        max_current_rhyme += 1
+                        rhymes[p + new_p, start_from + pw] = max_current_rhyme
+                        rhymes[p, w] = max_current_rhyme
+                        current_rhyme_num = max_current_rhyme
+        assert max_current_rhyme <= prev_max_rhyme_num + 1
+        return max_current_rhyme
