@@ -1,12 +1,12 @@
-# Lil Neural, the illest rapper alive
+# Lil Neuron, the illest rapper alive
 
-Lil Neural don't need DNA
+Lil Neuron don't need DNA
 to drink Alizé,
 make out your girl erryday
 sell out stadiums and make more
 rap lyrics
 
-Lil neural picks words so quick
+Lil Neuron picks words so quick
 you gotta predict he was not intermixed
 from the old sloppy play of chicks and dicks
 rather
