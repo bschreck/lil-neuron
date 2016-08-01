@@ -174,6 +174,8 @@ hid1_init_sym = T.matrix()
 hid2_init_sym = T.matrix()
 
 
+# TODO: create a for loop that creates the following layers
+# for each feature
 # BUILDING THE MODEL
 # Model structure:
 #
@@ -215,6 +217,8 @@ l_rec2 = lasagne.layers.GRULayer(
     hid_init=hid2_init_sym)
 
 l_drp2 = lasagne.layers.DropoutLayer(l_rec2, p=dropout_frac)
+
+# TODO: here we want a ConcatLayer
 
 
 # by reshaping we can combine feed-forward and recurrent layers in the
