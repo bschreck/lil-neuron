@@ -10,6 +10,20 @@ The example demonstrates:
       corpus.
     * How to combine recurrent and feed-forward layers in the same Lasagne
       model.
+
+
+STRATEGY:
+    Each song includes a separate sub-network that's not recurrent with just metadata about the song
+    so year, location, artist (embedded as a low-dimensional vector), featured artists, etc.
+
+    Each song could addionally include the performing rapper as the start-of-verse symbol, using the same
+    encoding as the artist and featured artists mentioned in the metadata
+
+    Scrape from lyrics.wikia.com, after first scraping the artists to use from the top N rappers on
+    last.fm, spotify, or echo nest, turn the artist's name into the format lyrics.wikia.com uses,
+    go to the artist page there, and find the CSS class that lists all the songs (or albums) and urls
+    Each song also includes an Artist: at the start of each verse if the artist is not the same as the
+    artist who made the song, or who is a sub-artist (if it's a rap group)
 """
 from __future__ import print_function, division
 import numpy as np
