@@ -24,6 +24,13 @@ STRATEGY:
     go to the artist page there, and find the CSS class that lists all the songs (or albums) and urls
     Each song also includes an Artist: at the start of each verse if the artist is not the same as the
     artist who made the song, or who is a sub-artist (if it's a rap group)
+
+    ALSO:
+    strategy for word embeddings: since rappers already know what words mean in their usual context
+    before even learning how to rap, I'll use Word2Vec to generate embeddings for the words in the corpus
+    beforehand. Unknown words (mispellings or rap lingo) will be embedded by some linear combinations of
+    the surrounding word vectors, maybe subtracting common words and adding uncommon words, as well as
+    finding the words closest in spelling to the word in question
 """
 from __future__ import print_function, division
 import numpy as np
