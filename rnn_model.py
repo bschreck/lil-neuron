@@ -20,13 +20,16 @@ import time
 import gzip
 import lasagne
 import cPickle
+from extract_feature import RapFeatureExtractor
 
 np.random.seed(1234)
 
 #  SETTINGS
 folder = 'penntree'                 # subfolder with data
 BATCH_SIZE = 50                     # batch size
-MODEL_SEQ_LEN = 50                  # how many steps to unroll
+MODEL_WORD_LEN = 50                 # how many words to unroll
+                                    # (some features may have multiple
+                                    #  symbols per word)
 TOL = 1e-6                          # numerial stability
 INI = lasagne.init.Uniform(0.1)     # initial parameter values
 REC_NUM_UNITS = 400                 # number of LSTM units
@@ -174,57 +177,67 @@ hid1_init_sym = T.matrix()
 hid2_init_sym = T.matrix()
 
 
-# TODO: create a for loop that creates the following layers
-# for each feature
+
 # BUILDING THE MODEL
+def build_rnn(model_seq_len):
 # Model structure:
 #
 #    embedding --> GRU1 --> GRU2 --> output network --> predictions
-l_inp = lasagne.layers.InputLayer((BATCH_SIZE, MODEL_SEQ_LEN))
+    l_inp = lasagne.layers.InputLayer((BATCH_SIZE, model_seq_len))
 
-l_emb = lasagne.layers.EmbeddingLayer(
-    l_inp,
-    input_size=vocab_size,       # size of embedding = number of words
-    output_size=embedding_size,  # vector size used to represent each word
-    W=INI)
+    l_emb = lasagne.layers.EmbeddingLayer(
+        l_inp,
+        input_size=vocab_size,       # size of embedding = number of words
+        output_size=embedding_size,  # vector size used to represent each word
+        W=INI)
 
-l_drp0 = lasagne.layers.DropoutLayer(l_emb, p=dropout_frac)
+    l_drp0 = lasagne.layers.DropoutLayer(l_emb, p=dropout_frac)
 
 
-def create_gate():
-    return lasagne.layers.Gate(W_in=INI, W_hid=INI, W_cell=None)
+    def create_gate():
+        return lasagne.layers.Gate(W_in=INI, W_hid=INI, W_cell=None)
 
 # first GRU layer
-l_rec1 = lasagne.layers.GRULayer(
-    l_drp0,
-    num_units=REC_NUM_UNITS,
-    resetgate=create_gate(),
-    updategate=create_gate(),
-    hidden_update=create_gate(),
-    learn_init=False,
-    hid_init=hid1_init_sym)
+    l_rec1 = lasagne.layers.GRULayer(
+        l_drp0,
+        num_units=REC_NUM_UNITS,
+        resetgate=create_gate(),
+        updategate=create_gate(),
+        hidden_update=create_gate(),
+        learn_init=False,
+        hid_init=hid1_init_sym)
 
-l_drp1 = lasagne.layers.DropoutLayer(l_rec1, p=dropout_frac)
+    l_drp1 = lasagne.layers.DropoutLayer(l_rec1, p=dropout_frac)
 
 # Second GRU layer
-l_rec2 = lasagne.layers.GRULayer(
-    l_drp1,
-    num_units=REC_NUM_UNITS,
-    resetgate=create_gate(),
-    updategate=create_gate(),
-    hidden_update=create_gate(),
-    learn_init=False,
-    hid_init=hid2_init_sym)
+    l_rec2 = lasagne.layers.GRULayer(
+        l_drp1,
+        num_units=REC_NUM_UNITS,
+        resetgate=create_gate(),
+        updategate=create_gate(),
+        hidden_update=create_gate(),
+        learn_init=False,
+        hid_init=hid2_init_sym)
 
-l_drp2 = lasagne.layers.DropoutLayer(l_rec2, p=dropout_frac)
+    l_drp2 = lasagne.layers.DropoutLayer(l_rec2, p=dropout_frac)
+    return l_drop2
 
-# TODO: here we want a ConcatLayer
 
+feature_extractor = RapFeatureExtractor(data_iter)
+features = feature_extractor.feature_set()
+final_layers = []
+total_model_len = 0
+for f in features:
+    model_seq_len = f.symbols_per_word() * MODEL_WORD_LEN
+    total_model_len += model_seq_len
+    final_layers.append(build_rnn(model_seq_len))
+
+concat_layer = ConcatLayer(final_layers, axis=1)
 
 # by reshaping we can combine feed-forward and recurrent layers in the
 # same Lasagne model.
-l_shp = lasagne.layers.ReshapeLayer(l_drp2,
-                                    (BATCH_SIZE*MODEL_SEQ_LEN, REC_NUM_UNITS))
+l_shp = lasagne.layers.ReshapeLayer(concat_layer,
+                                    (BATCH_SIZE*total_model_len, REC_NUM_UNITS))
 l_out = lasagne.layers.DenseLayer(l_shp,
                                   num_units=vocab_size,
                                   nonlinearity=lasagne.nonlinearities.softmax)

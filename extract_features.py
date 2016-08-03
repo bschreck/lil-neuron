@@ -13,6 +13,19 @@ from itertools import izip_longest
 import pdb
 
 
+class Feature(object):
+    def __init__(self):
+        self.max_padding = 0
+    def symbols_per_word(self):
+        return self.max_padding
+
+class PhonemeFeature(Feature):
+    def
+
+class Stresses(Feature):
+    def extract(self, phonemes):
+        return phonemes[...,1]
+
 class RapFeatureExtractor(object):
     all_phones = set(["AA", "AE", "AH", "AO", "AW", "AY", "B", "CH", "D", "DH",
                       "EH", "ER", "EY", "F", "G", "HH", "IH", "IY", "JH", "K",
@@ -24,13 +37,13 @@ class RapFeatureExtractor(object):
 
     def __init__(self, lyric_iterator):
         self.lyric_iterator = lyric_iterator
-        self.phone_feature_set = [self.stresses,
-                                  self.raw_phonemes,
-                                  self.stressed_phonemes,
-                                  self.word_phonemes,
-                                  self.phrase_phonemes,
-                                  self.word_group_rhyme_scheme]
-        self.word_feature_set = [self.raw_words, self.word_rhyme_scheme]
+        self.phone_feature_set = [Stresses(),
+                                  RawPhonemes(),
+                                  StressedPhonemes(),
+                                  WordPhonemes(),
+                                  PhrasePhonemes(),
+                                  WordGroupRhymeScheme()]
+        self.word_feature_set = [RawWords(), WordRhymeScheme()]
 
     @classmethod
     def find_shape(cls, seq):
@@ -77,15 +90,23 @@ class RapFeatureExtractor(object):
         else:
             return phone_stress[:-1], stress
 
+    def feature_set(self):
+        return self.phone_feature_set + self.word_feature_set
+
     def extract_features_to_file(self):
         for song in self.lyric_iterator:
             song_as_phonemes, song_as_ints = self.extract_phonemes(song)
+            #TODO: get phone_symbols_per_word for song_as_phonemes
+            # we want the max of this over all songs
+            # Also want to change this from a standard numpy array with padding
+            # to just one with symbols for end of phrase, end of word, etc.
+            # But we do need to iterate once over entire dataset to find max phones per word
 
             shape_song_phones = song_as_phonemes.shape
             shape_phone_features = tuple([len(self.phone_feature_set)] + list(shape_song_phones[:-1]))
             song_phone_features = -1 * np.ones(shape_phone_features, dtype=np.int64)
             for i, feature_extractor in enumerate(self.phone_feature_set):
-                feature = feature_extractor(song_as_phonemes)
+                feature = feature_extractor.extract(song_as_phonemes)
                 if feature is not None:
                     song_phone_features[i, :] = feature
 
@@ -93,7 +114,7 @@ class RapFeatureExtractor(object):
             shape_word_features = tuple([len(self.word_feature_set)] + list(shape_song_words))
             song_word_features = -1 * np.ones(shape_word_features, dtype=np.int64)
             for i, feature_extractor in enumerate(self.word_feature_set):
-                feature = feature_extractor(song_as_ints)
+                feature = feature_extractor.extract(song_as_ints)
                 if feature is not None:
                     song_word_features[i, :] = feature
             self.serialize_and_write_to_disk(song_word_features, song_phone_features)
@@ -147,8 +168,6 @@ class RapFeatureExtractor(object):
     def raw_words(self, song):
         return song
 
-    def stresses(self, phonemes):
-        return phonemes[...,1]
 
     def raw_phonemes(self, phonemes):
         return phonemes[...,0]
