@@ -13,6 +13,9 @@ from itertools import izip_longest
 import pdb
 EOP = -2
 EOS = -3
+#TODO: Also include EOV (end of verse), NRP (new rapper),
+# NRP is followed by an integer (which becomes an embedding)
+# representing the rapper who is rapping the current verse
 
 class Feature(object):
     def get_feat_name(self):
@@ -52,6 +55,27 @@ class PhrasePhonemes(PhonemeFeature):
         pass
 
 class WordGroupRhymeScheme(PhonemeFeature):
+    def extract(self, phonemes, len_song_words,
+                max_phones_per_word, max_prons_per_word):
+        pass
+
+class AssonanceRhyme(PhonemeFeature):
+    def extract(self, phonemes, len_song_words,
+                max_phones_per_word, max_prons_per_word):
+        pass
+class ConsonanceRhyme(PhonemeFeature):
+    def extract(self, phonemes, len_song_words,
+                max_phones_per_word, max_prons_per_word):
+        pass
+class MultiSyllabicRhyme(PhonemeFeature):
+    def extract(self, phonemes, len_song_words,
+                max_phones_per_word, max_prons_per_word):
+        pass
+class MultiSyllabicRhyme(PhonemeFeature):
+    def extract(self, phonemes, len_song_words,
+                max_phones_per_word, max_prons_per_word):
+        pass
+class Alliteration(PhonemeFeature):
     def extract(self, phonemes, len_song_words,
                 max_phones_per_word, max_prons_per_word):
         pass
