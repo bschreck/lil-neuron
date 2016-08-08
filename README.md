@@ -41,6 +41,8 @@ to be the one and only
 rapper perfected
 
 ## A Recurrent Neural Network Language Model to Generate Rap Lyrics
+IDEA: use pretrained RNN (trained on standard english), and then fine
+tune here with rap lyrics
 
 Training Model:
  1. Create preprocessor to create several different representations of
