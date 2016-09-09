@@ -7,22 +7,52 @@ Pronunciation features:
     - raw phonemes, broken up into groups separated by phrases or lines
     - rhyme scheme as categorical variables (mark each rhyme with same category)
 """
-import pronouncing as pron
+import pronouncing
 import numpy as np
 from itertools import izip_longest
 import pdb
-EOP = -2
-EOS = -3
+EOV = -2
+EOP = -3
+EOS = -4
+# NRP = -5
 #TODO: Also include EOV (end of verse), NRP (new rapper),
 # NRP is followed by an integer (which becomes an embedding)
 # representing the rapper who is rapping the current verse
+
+#TODO: all these are simple loops and should be in Cython
 
 class Feature(object):
     def get_feat_name(self):
         return self.__name__
 
 class PhonemeFeature(Feature):
-    pass
+    def extract_basic(phonemes, len_song_words,
+                      max_phones_per_word, max_prons_per_word,
+                      phones=True):
+        last_index = 1
+        if phones:
+            last_index = 0
+
+        features = -1*np.ones((len_song_words, max_prons_per_word))
+        cur_word_i = 0
+        for i, phrase in enumerate(phonemes):
+            for j, word in enumerate(phrase):
+                word_vector = -1*np.ones(max_phones_per_word*max_prons_per_word)
+                for k, pron in enumerate(word):
+                    start = k * max_phones_per_word
+                    for i, phone_stress in enumerate(pron):
+                        if phone_stress == -1:
+                            break
+                        stress = phone_stress[last_index]
+                        word_vector[start + i] = stress
+                features[cur_word_i] = word_vector
+                cur_word_i += 1
+            features[cur_word_i, 0] = EOP
+            cur_word_i += 1
+
+        assert cur_word_i == len_song_words - 1
+        feature_vector[-1, 0] = EOS
+        return features
 
 class WordFeature(Feature):
     pass
@@ -30,29 +60,16 @@ class WordFeature(Feature):
 class Stresses(PhonemeFeature):
     def extract(self, phonemes, len_song_words,
                 max_phones_per_word, max_prons_per_word):
-        # TODO: serialize phones into feature vector
-        return phonemes[...,1]
+        return super(Stresses, self).extract_basic(phonemes, len_song_words,
+                                                   max_phones_per_word, max_prons_per_word,
+                                                   phones=False)
 
 class RawPhonemes(PhonemeFeature):
     def extract(self, phonemes, len_song_words,
                 max_phones_per_word, max_prons_per_word):
-        # TODO: serialize phones into feature vector
-        return phonemes[...,0]
-
-class StressedPhonemes(PhonemeFeature):
-    def extract(self, phonemes, len_song_words,
-                max_phones_per_word, max_prons_per_word):
-        pass
-
-class WordPhonemes(PhonemeFeature):
-    def extract(self, phonemes, len_song_words,
-                max_phones_per_word, max_prons_per_word):
-        pass
-
-class PhrasePhonemes(PhonemeFeature):
-    def extract(self, phonemes, len_song_words,
-                max_phones_per_word, max_prons_per_word):
-        pass
+        return super(Stresses, self).extract_basic(phonemes, len_song_words,
+                                                   max_phones_per_word, max_prons_per_word,
+                                                   phones=True)
 
 class WordGroupRhymeScheme(PhonemeFeature):
     def extract(self, phonemes, len_song_words,
@@ -71,19 +88,30 @@ class MultiSyllabicRhyme(PhonemeFeature):
     def extract(self, phonemes, len_song_words,
                 max_phones_per_word, max_prons_per_word):
         pass
-class MultiSyllabicRhyme(PhonemeFeature):
-    def extract(self, phonemes, len_song_words,
-                max_phones_per_word, max_prons_per_word):
-        pass
+
 class Alliteration(PhonemeFeature):
     def extract(self, phonemes, len_song_words,
                 max_phones_per_word, max_prons_per_word):
         pass
 
 class RawWords(WordFeature):
-    def extract(self, words, song_dim):
-        # TODO: serialize words into feature vector
-        return words
+    def extract(self, song, song_dim):
+        feature_vector = -1*np.ones((song_dim, 1))
+        song_index = 0
+        for v, verse in enumerate(song):
+            for p, phrase in enumerate(verse):
+                for w, word in enumerate(phrase):
+                    if word == -1:
+                        continue
+                    feature_vector[song_index, 0] = word
+                    song_index += 1
+                feature_vector[song_index, 0] = EOP
+                song_index += 1
+            feature_vector[song_index, 0] = EOV
+            song_index += 1
+        assert song_index == song_dim - 1
+        feature_vector[-1, 0] = EOS
+        return feature_vector
 
 class WordRhymeScheme(WordFeature):
     """
@@ -112,7 +140,7 @@ class WordRhymeScheme(WordFeature):
                 song_index += 1
             feature_vector[song_index, 0] = EOP
             song_index += 1
-        assert song_index == song_dim
+        assert song_index == song_dim - 1
         feature_vector[-1, 0] = EOS
         return feature_vector
 
@@ -132,7 +160,7 @@ class WordRhymeScheme(WordFeature):
                 if potential_word_int == -1:
                     continue
                 potential_word = self.int_to_word[potential_word_int]
-                if potential_word in pron.rhymes(word):
+                if potential_word in pronouncing.rhymes(word):
                     if current_rhyme_num > -1:
                         rhymes[p + new_p, start_from + pw] = current_rhyme_num
                     else:
@@ -156,9 +184,6 @@ class RapFeatureExtractor(object):
         self.lyric_iterator = lyric_iterator
         self.phone_feature_set = [Stresses(),
                                   RawPhonemes(),
-                                  StressedPhonemes(),
-                                  WordPhonemes(),
-                                  PhrasePhonemes(),
                                   WordGroupRhymeScheme()]
         self.word_feature_set = [RawWords(), WordRhymeScheme(num_phrases=4)]
 
@@ -245,42 +270,55 @@ class RapFeatureExtractor(object):
     def extract_phonemes(self, song):
         phones = []
         words = []
+        len_max_verse = 0
         len_max_phrase = 0
         len_song_words = 0
         max_phones_per_word = 0
         max_prons_per_word = 0
-        for num_phrase, phrase in enumerate(song):
+        for num_verse, verse in enumerate(song):
             phones.append([])
-            phrase_words = []
-            for word in phrase.split(' '):
-                phrase_words.append(self.word_int_encode(word))
-                pronunciations = []
-                for pr in pron.phones_for_word(word):
-                    word_phone_stresses = []
-                    for phone_stress in pr.split(' '):
-                        phone, stress = self.split_phone_stress(phone_stress)
-                        word_phone_stresses.append([self.phone_int_encode(phone), stress])
-                    len_phones = len(word_phone_stresses)
-                    if len_phones > max_phones_per_word:
-                        max_phones_per_word = len_phones
-                    pronunciations.append(word_phone_stresses)
-                phones[-1].append(pronunciations)
-                len_pron = len(pronunciations)
-                if len_pron > max_prons_per_word:
-                    max_prons_per_word = len_pron
-            len_phrase = len(phrase_words)
-            if len_phrase > len_max_phrase:
-                len_max_phrase = len_phrase
+            verse_words = []
+            for num_phrase, phrase in enumerate(verse):
+                phones[-1].append([])
+                phrase_words = []
+                for word in phrase.split(' '):
+                    if word == '':
+                        continue
+                    phrase_words.append(self.word_int_encode(word))
+                    pronunciations = []
+                    for pr in pronouncing.phones_for_word(word):
+                        word_phone_stresses = []
+                        for phone_stress in pr.split(' '):
+                            phone, stress = self.split_phone_stress(phone_stress)
+                            word_phone_stresses.append([self.phone_int_encode(phone), stress])
+                        len_phones = len(word_phone_stresses)
+                        if len_phones > max_phones_per_word:
+                            max_phones_per_word = len_phones
+                        pronunciations.append(word_phone_stresses)
+                    phones[-1][-1].append(pronunciations)
+                    len_pron = len(pronunciations)
+                    if len_pron > max_prons_per_word:
+                        max_prons_per_word = len_pron
+                len_phrase = len(phrase_words)
+                if len_phrase > len_max_phrase:
+                    len_max_phrase = len_phrase
 
-            words.append(phrase_words)
-            # add number of words plus <end-of-phrase>
-            len_song_words += (len_phrase + 1)
+                verse_words.append(phrase_words)
+                # add number of words plus <end-of-phrase>
+                len_song_words += (len_phrase + 1)
+            len_verse = num_phrase + 1
+            if len_verse > len_max_verse:
+                len_max_verse = len_verse
+            words.append(verse_words)
+            # add <end-of-verse>
+            len_song_words += 1
+        # add <end-of-song>
+        len_song_words +=1
         phones_arr = -1 * np.ones(self.find_shape(phones), dtype=np.int64)
         self.fill_array(phones_arr, phones)
 
-        # num phrases plus <end-of-song>
-        num_phrases = num_phrase + 2
-        words_arr = -1 * np.ones((num_phrases, len_max_phrase), dtype=np.int64)
+        num_verses = num_verse + 1
+        words_arr = -1 * np.ones((num_verses, len_max_verse, len_max_phrase), dtype=np.int64)
         self.fill_array(words_arr, words)
         return phones_arr, words_arr, len_song_words, max_phones_per_word, max_prons_per_word
 

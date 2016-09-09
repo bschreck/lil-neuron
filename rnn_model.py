@@ -200,7 +200,7 @@ hid2_init_sym = T.matrix()
 
 
 # BUILDING THE MODEL
-def build_rnn(model_seq_len):
+def build_rnn(model_seq_len, word_vector_size):
 # Model structure:
 #
 #    embedding --> GRU1 --> GRU2 --> output network --> predictions
@@ -208,8 +208,8 @@ def build_rnn(model_seq_len):
 
     l_emb = lasagne.layers.EmbeddingLayer(
         l_inp,
-        input_size=vocab_size,       # size of embedding = number of words
-        output_size=embedding_size,  # vector size used to represent each word
+        input_size=word_vector_size,     # word2vec embedding dimension or number of phonemes
+        output_size=embedding_size,  # vector size used to represent each word internally
         W=INI)
 
     l_drp0 = lasagne.layers.DropoutLayer(l_emb, p=dropout_frac)
@@ -241,17 +241,22 @@ def build_rnn(model_seq_len):
         hid_init=hid2_init_sym)
 
     l_drp2 = lasagne.layers.DropoutLayer(l_rec2, p=dropout_frac)
-    return l_drop2
+    return [l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2]
 
 
 feature_extractor = RapFeatureExtractor(data_iter)
 features = feature_extractor.feature_set()
 final_layers = []
+rec_layers = []
 total_model_len = 0
 for f in features:
-    model_seq_len = f.symbols_per_word() * MODEL_WORD_LEN
+    feature_vector_size = f.vector_dim
+    model_seq_len = MODEL_WORD_LEN
     total_model_len += model_seq_len
-    final_layers.append(build_rnn(model_seq_len))
+    [l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2] = \
+        build_rnn(model_seq_len, feature_vector_size)
+    final_layers.append(l_drp2)
+    rec_layers.extend(l_rec1, l_rec2)
 
 concat_layer = ConcatLayer(final_layers, axis=1)
 
@@ -275,19 +280,21 @@ def calc_cross_ent(net_output, targets):
     return cost
 
 # Note the use of deterministic keyword to disable dropout during evaluation.
-train_out,  l_rec1_hid_out,  l_rec2_hid_out = lasagne.layers.get_output(
-    [l_out, l_rec1, l_rec2], sym_x, deterministic=False)
+train_out_layers = lasagne.layers.get_output(
+        [l_out] + rec_layers, sym_x, deterministic=False)
+train_out = train_out_layers[0]
 
 
 # after we have called get_ouput then the layers will have reference to
 # their output values. We need to keep track of the output values for both
 # training and evaluation and for each hidden layer because we want to
 # initialze each batch with the last hidden values from the previous batch.
-hidden_states_train = [l_rec1_hid_out, l_rec2_hid_out]
+hidden_states_train = train_out_layers[1:]
 
 eval_out, l_rec1_hid_out,  l_rec2_hid_out = lasagne.layers.get_output(
-    [l_out, l_rec1, l_rec2], sym_x, deterministic=True)
-hidden_states_eval = [l_rec1_hid_out, l_rec2_hid_out]
+    [l_out] + rec_layers, sym_x, deterministic=True)
+eval_out = eval_out_layers[0]
+hidden_states_eval = eval_out_layers[1:]
 
 cost_train = T.mean(calc_cross_ent(train_out, sym_y))
 cost_eval = T.mean(calc_cross_ent(eval_out, sym_y))
@@ -320,19 +327,16 @@ updates = lasagne.updates.sgd(all_grads, all_params, learning_rate=sh_lr)
 print("compiling f_eval...")
 fun_inp = [sym_x, sym_y, hid1_init_sym, hid2_init_sym]
 f_eval = theano.function(fun_inp,
-                         [cost_eval,
-                          hidden_states_eval[0][:, -1],
-                          hidden_states_eval[1][:, -1]])
+                         [cost_eval]+
+                          [t[:.-1] for t in hidden_states_eval])
 
 # define training function. This graph has dropout enabled.
 # The update arg specifies that the parameters should be updated using the
 # update rules.
 print("compiling f_train...")
 f_train = theano.function(fun_inp,
-                          [cost_train,
-                           norm,
-                           hidden_states_train[0][:, -1],
-                           hidden_states_train[1][:, -1]],
+                          [cost_train, norm] +
+                          [t[:.-1] for t in hidden_states_train],
                           updates=updates)
 
 
