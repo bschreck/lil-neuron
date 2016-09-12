@@ -63,54 +63,6 @@ max_grad_norm = 15                  # scale steps if norm is above this value
 num_epochs = 1000                   # Number of epochs to run
 
 
-# First we'll define a functions to load the Penn Tree data.
-
-def load_data(file_name, vocab_map, vocab_idx):
-    """
-    Loads Penn Tree files downloaded from https://github.com/wojzaremba/lstm
-    Parameters
-    ----------
-    file_name : str
-        Path to Penn tree file.
-    vocab_map : dictionary
-        Dictionary mapping words to integers
-    vocab_idx : one element list
-        Current vocabulary index.
-    Returns
-    -------
-    Returns an array with each words specified in file_name as integers.
-    Note that the function has the side effects that vocab_map and vocab_idx
-    are updated.
-    Notes
-    -----
-    This is python port of the LUA function load_data in
-    https://github.com/wojzaremba/lstm/blob/master/data.lua
-    """
-    def process_line(line):
-        line = line.lstrip()
-        line = line.replace('\n', '<eos>')
-        words = line.split(" ")
-        if words[-1] == "":
-            del words[-1]
-        return words
-
-    words = []
-    with gzip.open(file_name, 'rb') as f:
-        for line in f.readlines():
-            words += process_line(line)
-
-    n_words = len(words)
-    print("Loaded %i words from %s" % (n_words, file_name))
-
-    x = np.zeros(n_words)
-    for wrd_idx, wrd in enumerate(words):
-        if wrd not in vocab_map:
-            vocab_map[wrd] = vocab_idx[0]
-            vocab_idx[0] += 1
-        x[wrd_idx] = vocab_map[wrd]
-    return x.astype('int32')
-
-
 def reorder(x_in, batch_size, model_seq_len):
     """
     Rearranges data set so batches process sequential data.
@@ -153,6 +105,7 @@ def reorder(x_in, batch_size, model_seq_len):
     x_out = x_in[:x_resize].reshape(n_samples, model_seq_len)
 
     out = np.zeros(n_samples, dtype=int)
+
     for i in range(n_batches):
         val = range(i, n_batches*batch_size+i, n_batches)
         out[i*batch_size:(i+1)*batch_size] = val
@@ -190,17 +143,13 @@ print("Valid data:", x_valid.shape)
 print("-" * 80)
 
 # Theano symbolic vars
-sym_x = T.imatrix()
 sym_y = T.imatrix()
 
-# symbolic vars for initial recurrent initial states
-hid1_init_sym = T.matrix()
-hid2_init_sym = T.matrix()
 
 
 
 # BUILDING THE MODEL
-def build_rnn(model_seq_len, word_vector_size):
+def build_rnn(hid1_init_sym, hid2_init_sym, model_seq_len, word_vector_size):
 # Model structure:
 #
 #    embedding --> GRU1 --> GRU2 --> output network --> predictions
@@ -241,20 +190,31 @@ def build_rnn(model_seq_len, word_vector_size):
         hid_init=hid2_init_sym)
 
     l_drp2 = lasagne.layers.DropoutLayer(l_rec2, p=dropout_frac)
-    return [l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2]
+    return [l_inp1, l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2]
 
 
 feature_extractor = RapFeatureExtractor(data_iter)
 features = feature_extractor.feature_set()
 final_layers = []
 rec_layers = []
+input_dict = {}
+inputs = []
 total_model_len = 0
 for f in features:
     feature_vector_size = f.vector_dim
     model_seq_len = MODEL_WORD_LEN
     total_model_len += model_seq_len
-    [l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2] = \
-        build_rnn(model_seq_len, feature_vector_size)
+
+    input_X = T.imatrix()
+    hid1_init_sym = T.matrix()
+    hid2_init_sym = T.matrix()
+    inputs.extend([input_X, hid1_init_sym, hid2_init_sym])
+
+    [l_inp, l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2] = \
+        build_rnn(hid1_init_sym, hid2_init_sym,
+                  model_seq_len, feature_vector_size)
+    input_dict[l_inp] = input_X
+
     final_layers.append(l_drp2)
     rec_layers.extend(l_rec1, l_rec2)
 
@@ -280,8 +240,9 @@ def calc_cross_ent(net_output, targets):
     return cost
 
 # Note the use of deterministic keyword to disable dropout during evaluation.
+y = lasagne.layers.get_output(l_out, { l_in1: x1, l_in2: x2 })
 train_out_layers = lasagne.layers.get_output(
-        [l_out] + rec_layers, sym_x, deterministic=False)
+        [l_out] + rec_layers, input_dict, deterministic=False)
 train_out = train_out_layers[0]
 
 
@@ -292,7 +253,7 @@ train_out = train_out_layers[0]
 hidden_states_train = train_out_layers[1:]
 
 eval_out, l_rec1_hid_out,  l_rec2_hid_out = lasagne.layers.get_output(
-    [l_out] + rec_layers, sym_x, deterministic=True)
+    [l_out] + rec_layers, input_dict, deterministic=True)
 eval_out = eval_out_layers[0]
 hidden_states_eval = eval_out_layers[1:]
 
@@ -325,18 +286,17 @@ updates = lasagne.updates.sgd(all_grads, all_params, learning_rate=sh_lr)
 
 # Define evaluation function. This graph disables dropout.
 print("compiling f_eval...")
-fun_inp = [sym_x, sym_y, hid1_init_sym, hid2_init_sym]
-f_eval = theano.function(fun_inp,
+f_eval = theano.function(inputs,
                          [cost_eval]+
-                          [t[:.-1] for t in hidden_states_eval])
+                          [t[:,-1] for t in hidden_states_eval])
 
 # define training function. This graph has dropout enabled.
 # The update arg specifies that the parameters should be updated using the
 # update rules.
 print("compiling f_train...")
-f_train = theano.function(fun_inp,
+f_train = theano.function(inputs,
                           [cost_train, norm] +
-                          [t[:.-1] for t in hidden_states_train],
+                          [t[:,-1] for t in hidden_states_train],
                           updates=updates)
 
 
@@ -372,13 +332,17 @@ for epoch in range(num_epochs):
     l_cost, l_norm, batch_time = [], [], time.time()
 
     # use zero as initial state
-    hid1, hid2 = [np.zeros((BATCH_SIZE, REC_NUM_UNITS),
-                           dtype='float32') for _ in range(2)]
+    hidden_states = [np.zeros((BATCH_SIZE, REC_NUM_UNITS),
+                           dtype='float32') for _ in range(len(features))]
     for i in range(n_batches_train):
-        x_batch = x_train[i*BATCH_SIZE:(i+1)*BATCH_SIZE]   # single batch
-        y_batch = y_train[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
+        #x_batch = x_train[i*BATCH_SIZE:(i+1)*BATCH_SIZE]   # single batch
+        #y_batch = y_train[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
+        x_batch, y_batch = corpus_iterator.extract_batch()
+        x_valid, y_valid = corpus_iterator.extract_batch(valid=True)
+        features_batch = feature_extractor.extract_batch(x_batch)
+        valid_features_batch = feature_extractor.extract_batch(x_batch, valid=True)
         cost, norm, hid1, hid2 = f_train(
-            x_batch, y_batch, hid1, hid2)
+            features_batch, y_batch, *hidden_states)
         l_cost.append(cost)
         l_norm.append(norm)
     with open('model.pickle', 'wb') as f:
