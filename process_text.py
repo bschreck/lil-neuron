@@ -2,6 +2,7 @@ from __future__ import division
 import gzip
 from gensim.models import Word2Vec
 import numpy as np
+import pandas as pd
 import math
 import sys
 
@@ -13,9 +14,12 @@ class TextProcessor(object):
                  corpus_path,
                  filenames,
                  batch_size,
-                 model_seq_len):
+                 model_seq_len,
+                 word_embedding_size,
+                 gzipped=True):
         self.corpus_path = corpus_path
-        self.model = Word2Vec.load_word2vec_format(self.corpus_path, binary=True)
+        #self.model = Word2Vec.load_word2vec_format(self.corpus_path, binary=True)
+        self.model = {}
         self.special_symbol_vecs = {
             '<eos>': self.eos_vector(),
             '<eov>': self.eov_vector(),
@@ -23,16 +27,22 @@ class TextProcessor(object):
             '<nrp>': self.nrp_vector(),
         }
         self.filenames = filenames
+        self.gzipped = gzipped
         self.batch_size = batch_size
         self.model_seq_len = model_seq_len
+        self.word_embedding_size = word_embedding_size
 
         self.symbols = []
-        self.vocab = set()
+        self.word2sym = {}
         self.sym2word = {}
         self.vocab_length = 0
 
     def load_file(self, filename):
-        with gzip.open(filename, 'rb') as f:
+        if self.gzipped:
+            open_func = gzip.open
+        else:
+            open_func = open
+        with open_func(filename, 'rb') as f:
             for line in f:
                 symbols = self.process_line(line)
                 self.symbols.extend(symbols)
@@ -43,47 +53,62 @@ class TextProcessor(object):
         words.append('<eos>')
         # TODO: parse <eov>, <eop>, <nrp>
         for i, word in enumerate(words):
-            if word not in self.vocab:
-                self.vocab.add(word)
-                self.sym2word[self.vocab_length] = word
-                yield self.vocab_length
+            if word not in self.word2sym:
+                cur_sym = self.vocab_length
+                self.word2sym[word] = cur_sym
+                self.sym2word[cur_sym] = word
+                yield cur_sym
                 self.vocab_length += 1
             else:
-                yield self.sym2word[word]
+                yield self.word2sym[word]
 
-    def word2vec(self, i, sym):
+    def word2vec(self, x):
+        i = x.index[0]
+        sym = x[0]
         word = self.sym2word[sym]
         if word in self.model:
             vec = self.model[word]
         elif word in self.special_symbol_vecs:
             vec = self.special_symbol_vecs[word]
         else:
-            vec = self.unknown_word(i)
-        yield vec
+            # TODO undo this stuff
+            vec = len(self.model)
+            self.model[word] = vec
+            #vec = self.unknown_word(i)
+        # TODO: take out list
+        return [vec]
+
+    def apply_word2vec(self):
+        symbols = pd.DataFrame({'sym':self.symbols})
+        self.vectors = symbols.apply(self.word2vec,axis=1)['sym']
 
     def unknown_word(self, i):
         # TODO: figure out scheme for unknown words
         pass
 
     def eos_vector(self):
+        return -1
         # TODO: figure out how to initialize this
         pass
 
     def eop_vector(self):
+        return -2
         # TODO: figure out how to initialize this
         pass
 
     def eov_vector(self):
+        return -3
         # TODO: figure out how to initialize this
         pass
 
     def nrp_vector(self):
+        return -4
         # TODO: figure out how to initialize this
         pass
 
     def calc_num_batches(self):
         x_resize =  \
-            (x_in.shape[0] // (self.batch_size*self.model_seq_len))*self.model_seq_len*self.batch_size
+            (len(self.symbols) // (self.batch_size*self.model_seq_len))*self.model_seq_len*self.batch_size
         self.n_samples = x_resize // self.model_seq_len
         self.n_batches = self.n_samples // self.batch_size
 
@@ -92,11 +117,12 @@ class TextProcessor(object):
             self.load_file(f)
         self.symbols = np.array(self.symbols)
         self.calc_num_batches()
+        self.apply_word2vec()
 
     def extract_batch(self):
         look_ahead_index = self.model_seq_len
         for i in range(self.batch_size - 1):
-            look_ahead_index += (self.num_batches*self.model_seq_len)
+            look_ahead_index += (self.n_batches*self.model_seq_len)
         batches_to_keep = int(math.ceil(look_ahead_index / (self.batch_size*self.model_seq_len)))
 
         rows_to_pull = np.zeros(self.batch_size, dtype=int)
@@ -125,6 +151,31 @@ class TextProcessor(object):
             x_out = prev_flat_batches[rows_to_pull]
             prev_flat_batches = np.roll(prev_flat_batches, -1, axis=0)
             yield x_out
+    def extract_ordered_data(self):
+        x_in = self.vectors
+        if x_in.shape[0] % (batch_size*model_seq_len) == 0:
+            print(" x_in.shape[0] % (batch_size*model_seq_len) == 0 -> x_in is "
+                  "set to x_in = x_in[:-1]")
+            x_in = x_in[:-1]
+
+        x_resize =  \
+            (x_in.shape[0] // (self.batch_size*self.model_seq_len))*self.model_seq_len*self.batch_size
+        n_samples = x_resize // (self.model_seq_len)
+        n_batches = n_samples // self.batch_size
+
+        targets = x_in[1:x_resize+1].reshape(n_samples, self.model_seq_len)
+        x_out = x_in[:x_resize].reshape(n_samples, self.model_seq_len)
+
+        out = np.zeros(n_samples, dtype=int)
+
+        for i in range(self.n_batches):
+            val = range(i, self.n_batches*self.batch_size+i, self.n_batches)
+            out[i*self.batch_size:(i+1)*self.batch_size] = val
+
+        x_out = x_out[out]
+        targets = targets[out]
+
+        return x_out.astype('int32'), targets.astype('int32')
 
 # def reorder(x_in, batch_size, model_seq_len):
     # """
@@ -221,13 +272,26 @@ class TextProcessor(object):
 
 
 if __name__ == '__main__':
-    x_in = np.arange(25)
-    def data(x_in):
-        for i in x_in:
-            yield i
-    x_gen = test(data(x_in), 3, 2, 4)
-    for i in x_gen:
-        print i
+    filenames = ['test_ints.txt']
+    test_rap = range(100)
+    test_rap = ' '.join([str(x) for x in test_rap])
+    with open('test_ints.txt','wb') as f:
+        f.write(test_rap)
+    batch_size = 2
+    model_seq_len = 3
+    word_embedding_size = 1
+    process = TextProcessor(None,
+                 filenames,
+                 batch_size,
+                 model_seq_len,
+                 word_embedding_size,
+                 gzipped=False)
+    process.load_data()
+    # TODO: deal with word vectors of dim>1
+    x, targets = process.extract_ordered_data()
+    print x
+    print targets
+
     # x_out = reorder(x_in, 3, 1)
     # print x_out
 
