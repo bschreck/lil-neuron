@@ -131,8 +131,8 @@ vocab_length = [0]
 
 
 gzipped = False
-feature_extractor = RapFeatureExtractor(train_data = train_filenames,
-                                        valid_data = valid_filenames,
+feature_extractor = RapFeatureExtractor(train_filenames = train_filenames,
+                                        valid_filenames = valid_filenames,
                                         batch_size = batch_size,
                                         model_word_len = MODEL_WORD_LEN,
                                         gzipped = gzipped,
