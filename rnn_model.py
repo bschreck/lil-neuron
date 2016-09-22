@@ -45,8 +45,6 @@ from extract_feature import RapFeatureExtractor
 
 np.random.seed(1234)
 
-#  SETTINGS
-folder = 'penntree'                 # subfolder with data
 BATCH_SIZE = 50                     # batch size
 MODEL_WORD_LEN = 50                 # how many words to unroll
                                     # (some features may have multiple
@@ -63,85 +61,6 @@ max_grad_norm = 15                  # scale steps if norm is above this value
 num_epochs = 1000                   # Number of epochs to run
 
 
-def reorder(x_in, batch_size, model_seq_len):
-    """
-    Rearranges data set so batches process sequential data.
-    If we have the dataset:
-    x_in = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-    and the batch size is 2 and the model_seq_len is 3. Then the dataset is
-    reordered such that:
-                   Batch 1    Batch 2
-                 ------------------------
-    batch pos 1  [1, 2, 3]   [4, 5, 6]
-    batch pos 2  [7, 8, 9]   [10, 11, 12]
-    This ensures that we use the last hidden state of batch 1 to initialize
-    batch 2.
-    Also creates targets. In language modelling the target is to predict the
-    next word in the sequence.
-    Parameters
-    ----------
-    x_in : 1D numpy.array
-    batch_size : int
-    model_seq_len : int
-        number of steps the model is unrolled
-    Returns
-    -------
-    reordered x_in and reordered targets. Targets are shifted version of x_in.
-    """
-    if x_in.ndim != 1:
-        raise ValueError("Data must be 1D, was", x_in.ndim)
-
-    if x_in.shape[0] % (batch_size*model_seq_len) == 0:
-        print(" x_in.shape[0] % (batch_size*model_seq_len) == 0 -> x_in is "
-              "set to x_in = x_in[:-1]")
-        x_in = x_in[:-1]
-
-    x_resize =  \
-        (x_in.shape[0] // (batch_size*model_seq_len))*model_seq_len*batch_size
-    n_samples = x_resize // (model_seq_len)
-    n_batches = n_samples // batch_size
-
-    targets = x_in[1:x_resize+1].reshape(n_samples, model_seq_len)
-    x_out = x_in[:x_resize].reshape(n_samples, model_seq_len)
-
-    out = np.zeros(n_samples, dtype=int)
-
-    for i in range(n_batches):
-        val = range(i, n_batches*batch_size+i, n_batches)
-        out[i*batch_size:(i+1)*batch_size] = val
-
-    x_out = x_out[out]
-    targets = targets[out]
-
-    return x_out.astype('int32'), targets.astype('int32')
-
-
-def traindata(model_seq_len, batch_size, vocab_map, vocab_idx):
-    x = load_data(os.path.join(folder, "ptb.train.txt.gz"),
-                  vocab_map, vocab_idx)
-    return reorder(x, batch_size, model_seq_len)
-
-
-def validdata(model_seq_len, batch_size, vocab_map, vocab_idx):
-    x = load_data(os.path.join(folder, "ptb.valid.txt.gz"),
-                  vocab_map, vocab_idx)
-    return reorder(x, batch_size, model_seq_len)
-
-# vocab_map and vocab_idx are updated as side effects of load_data
-vocab_map = {}
-vocab_idx = [0]
-x_train, y_train = traindata(MODEL_SEQ_LEN, BATCH_SIZE, vocab_map, vocab_idx)
-x_valid, y_valid = validdata(MODEL_SEQ_LEN, BATCH_SIZE, vocab_map, vocab_idx)
-vocab_size = vocab_idx[0]
-
-
-print("-" * 80)
-print("Vocab size:s", vocab_size)
-print("Data shapes")
-print("Train data:", x_train.shape)
-print("Valid data:", x_valid.shape)
-print("-" * 80)
-
 # Theano symbolic vars
 sym_y = T.imatrix()
 
@@ -157,7 +76,7 @@ def build_rnn(hid1_init_sym, hid2_init_sym, model_seq_len, word_vector_size):
 
     l_emb = lasagne.layers.EmbeddingLayer(
         l_inp,
-        input_size=word_vector_size,     # word2vec embedding dimension or number of phonemes
+        input_size=word_vector_size,     # words as chars or number of phonemes
         output_size=embedding_size,  # vector size used to represent each word internally
         W=INI)
 
@@ -192,8 +111,43 @@ def build_rnn(hid1_init_sym, hid2_init_sym, model_seq_len, word_vector_size):
     l_drp2 = lasagne.layers.DropoutLayer(l_rec2, p=dropout_frac)
     return [l_inp1, l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2]
 
+train_filenames = []
+valid_filenames = []
+char2sym = {}
+sym2char = {}
+vocab_length = [0]
+# train_processor = TextProcessor(train_filenames, char2sym, sym2char, vocab_length)
+# train_processor.load_data()
+# X_train,target_train = train_processor.extract_ordered_data()
+# valid_processor = TextProcessor(train_filenames, char2sym, sym2char, vocab_length))
+# valid_processor.load_data()
+# X_valid,target_valid = valid_processor.extract_ordered_data()
 
-feature_extractor = RapFeatureExtractor(data_iter)
+
+# train_feature_extractor = RapFeatureExtractor(train_filenames)
+# train_features = train_feature_extractor.extract()
+# valid_feature_extractor = RapFeatureExtractor(valid_filenames)
+# valid_features = valid_feature_extractor.extract()
+
+
+gzipped = False
+feature_extractor = RapFeatureExtractor(train_data = train_filenames,
+                                        valid_data = valid_filenames,
+                                        batch_size = batch_size,
+                                        model_word_len = MODEL_WORD_LEN,
+                                        gzipped = gzipped,
+                                        char2sym = char2sym,
+                                        sym2char = sym2char,
+                                        vocab_length = vocab_length)
+vocab_size = vocab_length[0]
+x_train, y_train, x_valid, y_valid = feature_extractor.extract()
+# TODO: Need to combine TextProcessor with FeatureExtractor so that it is
+#just a feature
+#x_train, y_train, x_valid, y_valid should each be a list of np.arrays representing the different features
+# this file is how I want the interface to be, and should be more or less done
+
+
+
 features = feature_extractor.feature_set()
 final_layers = []
 rec_layers = []
@@ -202,8 +156,7 @@ inputs = []
 total_model_len = 0
 for f in features:
     feature_vector_size = f.vector_dim
-    model_seq_len = MODEL_WORD_LEN
-    total_model_len += model_seq_len
+    total_model_len += MODEL_WORD_LEN
 
     input_X = T.imatrix()
     hid1_init_sym = T.matrix()
@@ -212,7 +165,7 @@ for f in features:
 
     [l_inp, l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2] = \
         build_rnn(hid1_init_sym, hid2_init_sym,
-                  model_seq_len, feature_vector_size)
+                  MODEL_WORD_LEN, feature_vector_size)
     input_dict[l_inp] = input_X
 
     final_layers.append(l_drp2)
@@ -228,12 +181,12 @@ l_out = lasagne.layers.DenseLayer(l_shp,
                                   num_units=vocab_size,
                                   nonlinearity=lasagne.nonlinearities.softmax)
 l_out = lasagne.layers.ReshapeLayer(l_out,
-                                    (BATCH_SIZE, MODEL_SEQ_LEN, vocab_size))
+                                    (BATCH_SIZE, MODEL_WORD_LEN, vocab_size))
 
 
 def calc_cross_ent(net_output, targets):
     # Helper function to calculate the cross entropy error
-    preds = T.reshape(net_output, (BATCH_SIZE * MODEL_SEQ_LEN, vocab_size))
+    preds = T.reshape(net_output, (BATCH_SIZE * MODEL_WORD_LEN, vocab_size))
     preds += TOL  # add constant for numerical stability
     targets = T.flatten(targets)
     cost = T.nnet.categorical_crossentropy(preds, targets)
@@ -264,11 +217,11 @@ cost_eval = T.mean(calc_cross_ent(eval_out, sym_y))
 all_params = lasagne.layers.get_all_params(l_out, trainable=True)
 
 # Calculate gradients w.r.t cost function. Note that we scale the cost with
-# MODEL_SEQ_LEN. This is to be consistent with
+# MODEL_WORD_LEN. This is to be consistent with
 # https://github.com/wojzaremba/lstm . The scaling is due to difference
 # between torch and theano. We could have also scaled the learning rate, and
 # also rescaled the norm constraint.
-all_grads = T.grad(cost_train*MODEL_SEQ_LEN, all_params)
+all_grads = T.grad(cost_train*MODEL_WORD_LEN, all_params)
 
 all_grads = [T.clip(g, -5, 5) for g in all_grads]
 
@@ -310,39 +263,37 @@ def calc_perplexity(x, y):
     https://github.com/wojzaremba/lstm/
     """
 
-    n_batches = x.shape[0] // BATCH_SIZE
+    n_batches = x[0].shape[0] // BATCH_SIZE
     l_cost = []
-    hid1, hid2 = [np.zeros((BATCH_SIZE, REC_NUM_UNITS),
-                           dtype='float32') for _ in range(2)]
+
+    hidden_states = [np.zeros((BATCH_SIZE, REC_NUM_UNITS),
+                           dtype='float32') for _ in xrange(len(x))]
 
     for i in range(n_batches):
-        x_batch = x[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
-        y_batch = y[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
+        x_batch = [f[i*BATCH_SIZE:(i+1)*BATCH_SIZE] for f in x]
+        y_batch = [f[i*BATCH_SIZE:(i+1)*BATCH_SIZE] for f in y]
         cost, hid1, hid2 = f_eval(
-            x_batch, y_batch, hid1, hid2)
+            x_batch, y_batch, *hidden_states)
         l_cost.append(cost)
 
-    n_words_evaluated = (x.shape[0] - 1) / MODEL_SEQ_LEN
+    n_words_evaluated = (x[0].shape[0] - 1) / MODEL_WORD_LEN
     perplexity = np.exp(np.sum(l_cost) / n_words_evaluated)
 
     return perplexity
 
-n_batches_train = x_train.shape[0] // BATCH_SIZE
+n_batches_train = x_train[0].shape[0] // BATCH_SIZE
 for epoch in range(num_epochs):
     l_cost, l_norm, batch_time = [], [], time.time()
 
     # use zero as initial state
     hidden_states = [np.zeros((BATCH_SIZE, REC_NUM_UNITS),
-                           dtype='float32') for _ in range(len(features))]
+                           dtype='float32') for _ in range(len(x_train))]
     for i in range(n_batches_train):
-        #x_batch = x_train[i*BATCH_SIZE:(i+1)*BATCH_SIZE]   # single batch
-        #y_batch = y_train[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
-        x_batch, y_batch = corpus_iterator.extract_batch()
-        x_valid, y_valid = corpus_iterator.extract_batch(valid=True)
-        features_batch = feature_extractor.extract_batch(x_batch)
-        valid_features_batch = feature_extractor.extract_batch(x_batch, valid=True)
+        x_batch = [f[i*BATCH_SIZE:(i+1)*BATCH_SIZE] for f in x_train]
+        y_batch = [f[i*BATCH_SIZE:(i+1)*BATCH_SIZE] for f in y_train]
+
         cost, norm, hid1, hid2 = f_train(
-            features_batch, y_batch, *hidden_states)
+            x_batch, y_batch, *hidden_states)
         l_cost.append(cost)
         l_norm.append(norm)
     with open('model.pickle', 'wb') as f:
@@ -354,8 +305,8 @@ for epoch in range(num_epochs):
         sh_lr.set_value(lasagne.utils.floatX(current_lr / float(decay)))
 
     elapsed = time.time() - batch_time
-    words_per_second = float(BATCH_SIZE*(MODEL_SEQ_LEN)*len(l_cost)) / elapsed
-    n_words_evaluated = (x_train.shape[0] - 1) / MODEL_SEQ_LEN
+    words_per_second = float(BATCH_SIZE*(MODEL_WORD_LEN)*len(l_cost)) / elapsed
+    n_words_evaluated = (x_train[0].shape[0] - 1) / MODEL_WORD_LEN
     perplexity_valid = calc_perplexity(x_valid, y_valid)
     perplexity_train = np.exp(np.sum(l_cost) / n_words_evaluated)
     print("Epoch           :", epoch)

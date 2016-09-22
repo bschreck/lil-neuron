@@ -32,6 +32,10 @@ class TextProcessor(object):
         self.vocab_length = 0
         self.max_word_len = 0
 
+    @property
+    def vector_dim(self):
+        return self.max_word_len
+
     def load_file(self, filename):
         if self.gzipped:
             open_func = gzip.open
@@ -117,100 +121,6 @@ class TextProcessor(object):
         targets = targets[out]
 
         return x_out.astype('int32'), targets.astype('int32')
-
-# def reorder(x_in, batch_size, model_seq_len):
-    # """
-    # Rearranges data set so batches process sequential data.
-    # If we have the dataset:
-    # x_in = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-    # and the batch size is 2 and the model_seq_len is 3. Then the dataset is
-    # reordered such that:
-                   # Batch 1    Batch 2
-                 # ------------------------
-    # batch pos 1  [1, 2, 3]   [4, 5, 6]
-    # batch pos 2  [7, 8, 9]   [10, 11, 12]
-    # This ensures that we use the last hidden state of batch 1 to initialize
-    # batch 2.
-    # Also creates targets. In language modelling the target is to predict the
-    # next word in the sequence.
-    # Parameters
-    # ----------
-    # x_in : 1D numpy.array
-    # batch_size : int
-    # model_seq_len : int
-        # number of steps the model is unrolled
-    # Returns
-    # -------
-    # reordered x_in and reordered targets. Targets are shifted version of x_in.
-    # """
-    # if x_in.ndim != 1:
-        # raise ValueError("Data must be 1D, was", x_in.ndim)
-
-    # if x_in.shape[0] % (batch_size*model_seq_len) == 0:
-        # print(" x_in.shape[0] % (batch_size*model_seq_len) == 0 -> x_in is "
-              # "set to x_in = x_in[:-1]")
-        # x_in = x_in[:-1]
-
-    # x_resize =  \
-        # (x_in.shape[0] // (batch_size*model_seq_len))*model_seq_len*batch_size
-    # n_samples = x_resize // (model_seq_len)
-    # n_batches = n_samples // batch_size
-    # print n_samples
-    # print n_batches
-
-    # targets = x_in[1:x_resize+1].reshape(n_samples, model_seq_len)
-    # x_out = x_in[:x_resize].reshape(n_samples, model_seq_len)
-    # print x_out
-
-    # out = np.zeros(n_samples, dtype=int)
-
-    # for i in range(n_batches):
-        # val = range(i, n_batches*batch_size+i, n_batches)
-        # out[i*batch_size:(i+1)*batch_size] = val
-
-    # x_out = x_out[out]
-    # targets = targets[out]
-
-    # return x_out.astype('int32'), targets.astype('int32')
-
-
-# def test(data, batch_size, model_seq_len, num_batches):
-        # #TODO: test this, and figure out how to get num_batches
-
-        # look_ahead_index = model_seq_len
-        # for i in range(batch_size - 1):
-            # look_ahead_index += (num_batches*model_seq_len)
-        # batches_to_keep = int(math.ceil(look_ahead_index / (batch_size*model_seq_len)))
-
-        # rows_to_pull = np.zeros(batch_size, dtype=int)
-        # for i in xrange(1, batch_size):
-            # rows_to_pull[i] = rows_to_pull[i-1] + batch_size + 1
-
-
-        # prev_flat_batches = np.zeros((batches_to_keep*
-                                      # batch_size,
-                                      # model_seq_len))
-
-        # start = True
-        # while True:
-            # if start:
-                # for b in xrange(batches_to_keep * batch_size):
-                    # for j in xrange(model_seq_len):
-                        # try:
-                            # vec = data.next()
-                        # except StopIteration:
-                            # raise StopIteration
-                        # prev_flat_batches[b, j] = vec
-                # start = False
-            # else:
-                # for j in xrange(model_seq_len):
-                    # vec = data.next()
-                    # prev_flat_batches[-1, j] = vec
-
-            # x_out = prev_flat_batches[rows_to_pull]
-            # prev_flat_batches = np.roll(prev_flat_batches, -1, axis=0)
-            # yield x_out
-
 
 if __name__ == '__main__':
     #filenames = ['test_ints.txt']
