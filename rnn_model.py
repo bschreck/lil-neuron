@@ -45,14 +45,14 @@ from extract_feature import RapFeatureExtractor
 
 np.random.seed(1234)
 
-BATCH_SIZE = 50                     # batch size
-MODEL_WORD_LEN = 50                 # how many words to unroll
+BATCH_SIZE = 3#50                     # batch size
+MODEL_WORD_LEN = 3#50                 # how many words to unroll
                                     # (some features may have multiple
                                     #  symbols per word)
 TOL = 1e-6                          # numerial stability
 INI = lasagne.init.Uniform(0.1)     # initial parameter values
-REC_NUM_UNITS = 400                 # number of LSTM units
-embedding_size = 400                # Embedding size
+REC_NUM_UNITS = 20#400                 # number of LSTM units
+embedding_size = 20#400                # Embedding size
 dropout_frac = 0.1                  # optional recurrent dropout
 lr = 2e-3                           # learning rate
 decay = 2.0                         # decay factor
@@ -111,29 +111,17 @@ def build_rnn(hid1_init_sym, hid2_init_sym, model_seq_len, word_vector_size):
     l_drp2 = lasagne.layers.DropoutLayer(l_rec2, p=dropout_frac)
     return [l_inp1, l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2]
 
-train_filenames = []
-valid_filenames = []
+train_filenames = ['data/test_rap.txt']
+valid_filenames = ['data/test_rap.txt']
 char2sym = {}
 sym2char = {}
 vocab_length = [0]
-# train_processor = TextProcessor(train_filenames, char2sym, sym2char, vocab_length)
-# train_processor.load_data()
-# X_train,target_train = train_processor.extract_ordered_data()
-# valid_processor = TextProcessor(train_filenames, char2sym, sym2char, vocab_length))
-# valid_processor.load_data()
-# X_valid,target_valid = valid_processor.extract_ordered_data()
-
-
-# train_feature_extractor = RapFeatureExtractor(train_filenames)
-# train_features = train_feature_extractor.extract()
-# valid_feature_extractor = RapFeatureExtractor(valid_filenames)
-# valid_features = valid_feature_extractor.extract()
 
 
 gzipped = False
 feature_extractor = RapFeatureExtractor(train_filenames = train_filenames,
                                         valid_filenames = valid_filenames,
-                                        batch_size = batch_size,
+                                        batch_size = BATCH_SIZE,
                                         model_word_len = MODEL_WORD_LEN,
                                         gzipped = gzipped,
                                         char2sym = char2sym,
@@ -141,12 +129,6 @@ feature_extractor = RapFeatureExtractor(train_filenames = train_filenames,
                                         vocab_length = vocab_length)
 vocab_size = vocab_length[0]
 x_train, y_train, x_valid, y_valid = feature_extractor.extract()
-# TODO: Need to combine TextProcessor with FeatureExtractor so that it is
-#just a feature
-#x_train, y_train, x_valid, y_valid should each be a list of np.arrays representing the different features
-# this file is how I want the interface to be, and should be more or less done
-
-
 
 features = feature_extractor.feature_set()
 final_layers = []
