@@ -38,9 +38,12 @@ class RapFeatureExtractor(object):
                  valid_filenames=None,
                  batch_size=3,
                  model_word_len=3,
+                 word2sym={},
+                 sym2word={},
                  char2sym={},
                  sym2char={},
-                 vocab_length=[0],
+                 char_vocab_length=0,
+                 vocab_length=0,
                  feature_set=None,
                  gzipped=True,
                  pickle_file=None):
@@ -55,20 +58,28 @@ class RapFeatureExtractor(object):
         self.model_word_len = model_word_len
         self.char2sym = char2sym
         self.sym2char = sym2char
+        self.word2sym = word2sym
+        self.sym2word = sym2word
+        self.char_vocab_length = char_vocab_length
         self.vocab_length = vocab_length
         self.max_word_len = 0
         self.max_prons_per_word = 0
         self.max_phones_per_word = 0
 
         self.special_symbols = {
-            '<eos>': self.eos_vector(),
-            '<eov>': self.eov_vector(),
-            '<nrp>': self.nrp_vector(),
         }
+        special_symbols = ['<eos>', '<eov>', '<nrp>']
+        for s in special_symbols:
+            self.word2sym[s] = self.vocab_length
+            self.sym2word[self.vocab_length] = s
+            self.special_symbols[s] = np.array(self.vocab_length)
+            self.vocab_length += 1
 
+        self.train_word_syms = []
         self.train_char_syms = []
         self.train_phone_syms = []
         self.train_stress_syms = []
+        self.valid_word_syms = []
         self.valid_char_syms = []
         self.valid_phone_syms = []
         self.valid_stress_syms = []
@@ -76,85 +87,95 @@ class RapFeatureExtractor(object):
         if feature_set:
             self.feature_set = feature_set
         else:
-            self.feature_set = [RawStresses(),
-                                RawPhonemes(),
-                                RawWordsAsChars()]
+            self.feature_set = [RawWordsAsChars(),
+                                RawStresses(),
+                                RawPhonemes()]
 
-    def eos_vector(self):
-        return np.array([-2])
-
-    def eov_vector(self):
-        return np.array([-4])
-
-    def nrp_vector(self):
-        return np.array([-5])
 
     def _process_line(self, line):
         line = line.lstrip().rstrip()
         words = line.split(" ")
         # TODO: Parse NRP
         if len(words) == 1 and words[0] == '':
-            return ([self.eov_vector()],
-                    [[self.eov_vector()]],
-                    [[self.eov_vector()]])
+            return ([self.special_symbols['<eov>']],
+                    [np.array([self.special_symbols['<eov>']])],
+                    [[np.array([self.special_symbols['<eov>']])]],
+                    [[np.array([self.special_symbols['<eov>']])]])
         if len(words) == 1 and words[0] in self.special_symbols:
             return ([self.special_symbols(words[0])],
-                    [[self.special_symbols(words[0])]],
-                    [[self.special_symbols(words[0])]])
-        line_syms = []
+                    [np.array([self.special_symbols(words[0])])],
+                    [[np.array([self.special_symbols(words[0])])]],
+                    [[np.array([self.special_symbols(words[0])])]])
+        line_word_syms = []
+        line_char_syms = []
         line_phones = []
         line_stresses = []
         for i, word in enumerate(words):
+            if word not in self.word2sym:
+                cur_word = self.vocab_length
+                self.word2sym[word] = cur_word
+                self.sym2word[cur_word] = word
+                self.vocab_length += 1
+            line_word_syms.append(self.word2sym[word])
             word_symbols = np.zeros(len(word), dtype=np.int32)
             word_phones, word_stresses = self._extract_phones(word)
             if len(word) > self.max_word_len:
                 self.max_word_len = len(word)
             for j, char in enumerate(word):
                 if char not in self.char2sym:
-                    cur_sym = self.vocab_length[0]
+                    cur_sym = self.char_vocab_length
                     self.char2sym[char] = cur_sym
                     self.sym2char[cur_sym] = char
                     word_symbols[j] = cur_sym
-                    self.vocab_length[0] += 1
+                    self.char_vocab_length += 1
                 else:
                     word_symbols[j] = self.char2sym[char]
-            line_syms.append(word_symbols)
+            line_char_syms.append(word_symbols)
             line_phones.append(word_phones)
             line_stresses.append(word_stresses)
-        line_syms.append(self.eos_vector())
-        line_phones.append([self.eos_vector()])
-        line_stresses.append([self.eos_vector()])
-        return line_syms, line_phones, line_stresses
+
+        line_word_syms.append(self.special_symbols['<eos>'])
+        line_char_syms.append(np.array([self.special_symbols['<eos>']]))
+        line_phones.append([np.array([self.special_symbols['<eos>']])])
+        line_stresses.append([np.array([self.special_symbols['<eos>']])])
+        return line_word_syms, line_char_syms, line_phones, line_stresses
 
     def _load_file(self, fname, valid=False):
         if self.gzipped:
             open_func = gzip.open
         else:
             open_func = open
-        all_symbols = []
+        all_word_symbols = []
+        all_char_symbols = []
         all_phones = []
         all_stresses = []
         with open_func(fname, 'rb') as f:
             for line in f:
-                symbols, phones, stresses = self._process_line(line)
-                all_symbols.extend(symbols)
+                word_symbols, char_symbols, phones, stresses = self._process_line(line)
+                all_word_symbols.extend(word_symbols)
+                all_char_symbols.extend(char_symbols)
                 all_phones.extend(phones)
                 all_stresses.extend(stresses)
         if valid:
-            self.valid_char_syms.extend(all_symbols)
+            self.valid_word_syms.extend(all_word_symbols)
+            self.valid_char_syms.extend(all_char_symbols)
             self.valid_phone_syms.extend(all_phones)
             self.valid_stress_syms.extend(all_stresses)
         else:
-            self.train_char_syms.extend(all_symbols)
+            self.train_word_syms.extend(all_word_symbols)
+            self.train_char_syms.extend(all_char_symbols)
             self.train_phone_syms.extend(all_phones)
             self.train_stress_syms.extend(all_stresses)
 
     def _save_data_to_pickle(self):
-        data = [self.train_char_syms, self.valid_char_syms,
+        data = [self.train_word_syms, self.valid_word_syms,
+                self.train_char_syms, self.valid_char_syms,
                 self.train_phone_syms, self.valid_phone_syms,
                 self.train_stress_syms, self.valid_stress_syms]
+        metadata = [self.char_vocab_length, self.char2sym, self.sym2char,
+                    self.vocab_length, self.word2sym, self.sym2word]
         with open(self.pck_data_file, 'wb') as f:
-            pickle.dump(data, f)
+            pickle.dump([data, metadata], f)
 
     def _load_data_from_pickle(self):
         if os.path.isfile(self.pck_data_file):
@@ -164,7 +185,7 @@ class RapFeatureExtractor(object):
 
     def _load_data(self):
         data = self._load_data_from_pickle()
-        if data is None or len(data) != 6:
+        if data is None or len(data) != 2:
             for f in self.train_filenames:
                 self._load_file(f)
             for f in self.train_filenames:
@@ -172,9 +193,13 @@ class RapFeatureExtractor(object):
             self._standardize_word_lengths()
             self._save_data_to_pickle()
         else:
-            self.train_char_syms, self.valid_char_syms = data[:2]
-            self.train_phone_syms, self.valid_phone_syms = data[2:4]
-            self.train_stress_syms, self.valid_stress_syms = data[4:]
+            data, metadata = data
+            self.char_vocab_length, self.char2sym, self.sym2char = metadata[:3]
+            self.vocab_length, self.word2sym, self.sym2word = metadata[3:]
+            self.train_word_syms, self.valid_word_syms = data[:2]
+            self.train_char_syms, self.valid_char_syms = data[2:4]
+            self.train_phone_syms, self.valid_phone_syms = data[4:6]
+            self.train_stress_syms, self.valid_stress_syms = data[6:]
         self.x_resize_train, self.n_samples_train, self.n_batches_train =\
             self._calc_num_batches(len(self.train_char_syms))
         self.x_resize_valid, self.n_samples_valid, self.n_batches_valid =\
@@ -188,6 +213,8 @@ class RapFeatureExtractor(object):
         return x_resize, n_samples, n_batches
 
     def _standardize_word_lengths(self):
+        self.train_word_syms = np.array(self.train_word_syms)
+        self.valid_word_syms = np.array(self.valid_word_syms)
         new_word_vectors = []
         for word_data in [self.train_char_syms, self.valid_char_syms]:
             vectors = -1 * np.ones((len(word_data), self.max_word_len))
@@ -215,12 +242,13 @@ class RapFeatureExtractor(object):
                   "set to x_in = x_in[:-1]")
             x_in = x_in[:-1]
 
-        targets = x_in[1: x_resize + 1].reshape(n_samples,
-                                                self.model_word_len,
-                                                vector_dim)
-        x_out = x_in[:x_resize].reshape(n_samples,
-                                        self.model_word_len,
-                                        vector_dim)
+        if vector_dim > 0:
+            args = [n_samples, self.model_word_len, vector_dim]
+        else:
+            args = [n_samples, self.model_word_len]
+        targets = x_in[1: x_resize + 1].reshape(*args)
+
+        x_out = x_in[:x_resize].reshape(*args)
 
         out = np.zeros(n_samples, dtype=int)
 
@@ -236,9 +264,19 @@ class RapFeatureExtractor(object):
     def extract(self):
         self._load_data()
         x_train = []
-        y_train = []
         x_valid = []
-        y_valid = []
+        unordered_raw_t = self.train_word_syms
+        _, y_t = self._reorder_data(unordered_raw_t,
+                                    self.n_batches_train,
+                                    self.n_samples_train,
+                                    self.x_resize_train,
+                                    0)
+        unordered_raw_v = self.valid_word_syms
+        _, y_v = self._reorder_data(unordered_raw_v,
+                                    self.n_batches_train,
+                                    self.n_samples_train,
+                                    self.x_resize_train,
+                                    0)
         for f in self.feature_set:
             if isinstance(f, PhonemeFeature):
                 data = [self.train_phone_syms, self.valid_phone_syms]
@@ -254,17 +292,14 @@ class RapFeatureExtractor(object):
                                           self.n_samples_train,
                                           self.x_resize_train,
                                           f.vector_dim)
-            print x_t.shape
             x_v, y_v = self._reorder_data(unordered_v,
                                           self.n_batches_valid,
                                           self.n_samples_valid,
                                           self.x_resize_valid,
                                           f.vector_dim)
             x_train.append(x_t)
-            y_train.append(y_t)
             x_valid.append(x_v)
-            y_valid.append(y_v)
-        return x_train, y_train, x_valid, y_valid
+        return x_train, y_t, x_valid, y_v
 
     def _split_phone_stress(self, phone_stress):
         try:
@@ -310,14 +345,13 @@ if __name__ == '__main__':
     word_embedding_size = 1
     char2sym = {}
     sym2char={}
-    vocab_length = [0]
+    char_vocab_length = [0]
     extractor = RapFeatureExtractor(train_filenames=filenames,
                                     valid_filenames=filenames,
                                     batch_size=3,
                                     model_word_len=3,
                                     char2sym=char2sym,
                                     sym2char=sym2char,
-                                    vocab_length=vocab_length,
                                     gzipped=False)
     x_train, y_train, x_valid, y_valid = extractor.extract()
     # print x_train, y_train

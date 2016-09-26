@@ -36,12 +36,11 @@ from __future__ import print_function, division
 import numpy as np
 import theano
 import theano.tensor as T
-import os
 import time
-import gzip
+import pdb
 import lasagne
 import cPickle
-from extract_feature import RapFeatureExtractor
+from extract_features import RapFeatureExtractor
 
 np.random.seed(1234)
 
@@ -51,8 +50,9 @@ MODEL_WORD_LEN = 3#50                 # how many words to unroll
                                     #  symbols per word)
 TOL = 1e-6                          # numerial stability
 INI = lasagne.init.Uniform(0.1)     # initial parameter values
+EMBEDDING_SIZE = 20#400                # Embedding size
 REC_NUM_UNITS = 20#400                 # number of LSTM units
-embedding_size = 20#400                # Embedding size
+
 dropout_frac = 0.1                  # optional recurrent dropout
 lr = 2e-3                           # learning rate
 decay = 2.0                         # decay factor
@@ -72,16 +72,19 @@ def build_rnn(hid1_init_sym, hid2_init_sym, model_seq_len, word_vector_size):
 # Model structure:
 #
 #    embedding --> GRU1 --> GRU2 --> output network --> predictions
-    l_inp = lasagne.layers.InputLayer((BATCH_SIZE, model_seq_len))
+    l_inp = lasagne.layers.InputLayer((BATCH_SIZE, model_seq_len, word_vector_size))
+    print("l_inp:", l_inp.output_shape)
 
-    l_emb = lasagne.layers.EmbeddingLayer(
+    l_emb = lasagne.layers.DenseLayer(
         l_inp,
-        input_size=word_vector_size,     # words as chars or number of phonemes
-        output_size=embedding_size,  # vector size used to represent each word internally
+        num_units=EMBEDDING_SIZE,
+        nonlinearity=lasagne.nonlinearities.leaky_rectify,
         W=INI)
+    # TODO: include bias?
+
+    print("l_emb:", l_emb.output_shape)
 
     l_drp0 = lasagne.layers.DropoutLayer(l_emb, p=dropout_frac)
-
 
     def create_gate():
         return lasagne.layers.Gate(W_in=INI, W_hid=INI, W_cell=None)
@@ -95,6 +98,7 @@ def build_rnn(hid1_init_sym, hid2_init_sym, model_seq_len, word_vector_size):
         hidden_update=create_gate(),
         learn_init=False,
         hid_init=hid1_init_sym)
+    print('l_rec1:', l_rec1.output_shape)
 
     l_drp1 = lasagne.layers.DropoutLayer(l_rec1, p=dropout_frac)
 
@@ -109,41 +113,38 @@ def build_rnn(hid1_init_sym, hid2_init_sym, model_seq_len, word_vector_size):
         hid_init=hid2_init_sym)
 
     l_drp2 = lasagne.layers.DropoutLayer(l_rec2, p=dropout_frac)
-    return [l_inp1, l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2]
+    return [l_inp, l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2]
 
 train_filenames = ['data/test_rap.txt']
 valid_filenames = ['data/test_rap.txt']
-char2sym = {}
-sym2char = {}
-vocab_length = [0]
-
-
 gzipped = False
 feature_extractor = RapFeatureExtractor(train_filenames = train_filenames,
                                         valid_filenames = valid_filenames,
                                         batch_size = BATCH_SIZE,
                                         model_word_len = MODEL_WORD_LEN,
-                                        gzipped = gzipped,
-                                        char2sym = char2sym,
-                                        sym2char = sym2char,
-                                        vocab_length = vocab_length)
-vocab_size = vocab_length[0]
+                                        gzipped = gzipped)
 x_train, y_train, x_valid, y_valid = feature_extractor.extract()
+# TODO: feature_extractor should save vocab_length, other stuff in pickle file
+vocab_size = feature_extractor.vocab_length
+char2sym = feature_extractor.char2sym
+sym2char = feature_extractor.sym2char
 
-features = feature_extractor.feature_set()
+
+features = feature_extractor.feature_set
 final_layers = []
 rec_layers = []
 input_dict = {}
-inputs = []
+inputs = {'x':[],'y':[sym_y], 'h':[]}
 total_model_len = 0
 for f in features:
     feature_vector_size = f.vector_dim
-    total_model_len += MODEL_WORD_LEN
+    total_model_len += REC_NUM_UNITS
 
     input_X = T.imatrix()
     hid1_init_sym = T.matrix()
     hid2_init_sym = T.matrix()
-    inputs.extend([input_X, hid1_init_sym, hid2_init_sym])
+    inputs['x'].append(input_X)
+    inputs['h'].extend([hid1_init_sym, hid2_init_sym])
 
     [l_inp, l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2] = \
         build_rnn(hid1_init_sym, hid2_init_sym,
@@ -151,19 +152,29 @@ for f in features:
     input_dict[l_inp] = input_X
 
     final_layers.append(l_drp2)
-    rec_layers.extend(l_rec1, l_rec2)
+    rec_layers.extend([l_rec1, l_rec2])
 
-concat_layer = ConcatLayer(final_layers, axis=1)
+inputs = inputs['x'] + inputs['y'] + inputs['h']
+
+concat_layer = lasagne.layers.ConcatLayer(final_layers, axis=1)
 
 # by reshaping we can combine feed-forward and recurrent layers in the
 # same Lasagne model.
+print("total model len:", total_model_len)
+print("rec num units:", REC_NUM_UNITS)
+print(concat_layer.output_shape)
 l_shp = lasagne.layers.ReshapeLayer(concat_layer,
-                                    (BATCH_SIZE*total_model_len, REC_NUM_UNITS))
+                                    (BATCH_SIZE * total_model_len, REC_NUM_UNITS))
+print(l_shp.output_shape)
+print("VOCAB SIZE:", vocab_size)
 l_out = lasagne.layers.DenseLayer(l_shp,
                                   num_units=vocab_size,
                                   nonlinearity=lasagne.nonlinearities.softmax)
+print("l_out:", l_out.output_shape)
 l_out = lasagne.layers.ReshapeLayer(l_out,
-                                    (BATCH_SIZE, MODEL_WORD_LEN, vocab_size))
+                                    (BATCH_SIZE,
+                                     total_model_len,
+                                     vocab_size))
 
 
 def calc_cross_ent(net_output, targets):
@@ -175,7 +186,6 @@ def calc_cross_ent(net_output, targets):
     return cost
 
 # Note the use of deterministic keyword to disable dropout during evaluation.
-y = lasagne.layers.get_output(l_out, { l_in1: x1, l_in2: x2 })
 train_out_layers = lasagne.layers.get_output(
         [l_out] + rec_layers, input_dict, deterministic=False)
 train_out = train_out_layers[0]
@@ -187,7 +197,7 @@ train_out = train_out_layers[0]
 # initialze each batch with the last hidden values from the previous batch.
 hidden_states_train = train_out_layers[1:]
 
-eval_out, l_rec1_hid_out,  l_rec2_hid_out = lasagne.layers.get_output(
+eval_out_layers = lasagne.layers.get_output(
     [l_out] + rec_layers, input_dict, deterministic=True)
 eval_out = eval_out_layers[0]
 hidden_states_eval = eval_out_layers[1:]
@@ -203,7 +213,7 @@ all_params = lasagne.layers.get_all_params(l_out, trainable=True)
 # https://github.com/wojzaremba/lstm . The scaling is due to difference
 # between torch and theano. We could have also scaled the learning rate, and
 # also rescaled the norm constraint.
-all_grads = T.grad(cost_train*MODEL_WORD_LEN, all_params)
+all_grads = T.grad(cost_train * MODEL_WORD_LEN, all_params)
 
 all_grads = [T.clip(g, -5, 5) for g in all_grads]
 
@@ -223,15 +233,16 @@ updates = lasagne.updates.sgd(all_grads, all_params, learning_rate=sh_lr)
 print("compiling f_eval...")
 f_eval = theano.function(inputs,
                          [cost_eval]+
-                          [t[:,-1] for t in hidden_states_eval])
+                          [t for t in hidden_states_eval])
 
 # define training function. This graph has dropout enabled.
 # The update arg specifies that the parameters should be updated using the
 # update rules.
 print("compiling f_train...")
+# used to be [t[:-1] for t in hidden_states_train]
 f_train = theano.function(inputs,
                           [cost_train, norm] +
-                          [t[:,-1] for t in hidden_states_train],
+                          [t for t in hidden_states_train],
                           updates=updates)
 
 
@@ -253,9 +264,10 @@ def calc_perplexity(x, y):
 
     for i in range(n_batches):
         x_batch = [f[i*BATCH_SIZE:(i+1)*BATCH_SIZE] for f in x]
-        y_batch = [f[i*BATCH_SIZE:(i+1)*BATCH_SIZE] for f in y]
-        cost, hid1, hid2 = f_eval(
-            x_batch, y_batch, *hidden_states)
+        y_batch = y[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
+        inputs = x_batch + [y_batch] + hidden_states
+        output = f_eval(*inputs)
+        cost = output[0]
         l_cost.append(cost)
 
     n_words_evaluated = (x[0].shape[0] - 1) / MODEL_WORD_LEN
@@ -272,10 +284,12 @@ for epoch in range(num_epochs):
                            dtype='float32') for _ in range(len(x_train))]
     for i in range(n_batches_train):
         x_batch = [f[i*BATCH_SIZE:(i+1)*BATCH_SIZE] for f in x_train]
-        y_batch = [f[i*BATCH_SIZE:(i+1)*BATCH_SIZE] for f in y_train]
+        y_batch = y_train[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
 
-        cost, norm, hid1, hid2 = f_train(
-            x_batch, y_batch, *hidden_states)
+        _inputs = x_batch + [y_batch] + hidden_states
+        output = f_train(*_inputs)
+        cost = output[0]
+        norm = output[1]
         l_cost.append(cost)
         l_norm.append(norm)
     with open('model.pickle', 'wb') as f:
