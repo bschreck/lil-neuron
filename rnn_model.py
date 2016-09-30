@@ -75,7 +75,10 @@ def build_rnn(hid1_init_sym, hid2_init_sym, model_seq_len, word_vector_size):
     l_inp = lasagne.layers.InputLayer((BATCH_SIZE, model_seq_len, word_vector_size))
     print("l_inp:", l_inp.output_shape)
 
-    l_emb = lasagne.layers.DenseLayer(
+    # TODO: this should be a layer that keeps the number of dimensions,
+    # and just alters the last dimension into EMBEDDING_SIZE
+    # maybe reshape input layer into 2D, and then add embedding layer
+    l_emb = lasagne.layers.NiNLayer(
         l_inp,
         num_units=EMBEDDING_SIZE,
         nonlinearity=lasagne.nonlinearities.leaky_rectify,
