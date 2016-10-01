@@ -287,12 +287,12 @@ class RapFeatureExtractor(object):
             else:
                 raise ValueError("Unkown feature type: {}".format(f.__class__))
             unordered_t, unordered_v = f.extract(*data)
-            x_t, y_t = self._reorder_data(unordered_t,
+            x_t, _ = self._reorder_data(unordered_t,
                                           self.n_batches_train,
                                           self.n_samples_train,
                                           self.x_resize_train,
                                           f.vector_dim)
-            x_v, y_v = self._reorder_data(unordered_v,
+            x_v, _ = self._reorder_data(unordered_v,
                                           self.n_batches_valid,
                                           self.n_samples_valid,
                                           self.x_resize_valid,

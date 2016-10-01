@@ -37,7 +37,7 @@ import numpy as np
 import theano
 import theano.tensor as T
 import time
-import pdb
+import pdb,sys
 import lasagne
 import cPickle
 from extract_features import RapFeatureExtractor
@@ -69,8 +69,6 @@ sym_y = T.imatrix()
 
 # BUILDING THE MODEL
 def build_rnn(hid1_init_sym, hid2_init_sym, model_seq_len, word_vector_size):
-# Model structure:
-#
 #    embedding --> GRU1 --> GRU2 --> output network --> predictions
     l_inp = lasagne.layers.InputLayer((BATCH_SIZE, model_seq_len, word_vector_size))
     print("l_inp:", l_inp.output_shape)
@@ -78,16 +76,19 @@ def build_rnn(hid1_init_sym, hid2_init_sym, model_seq_len, word_vector_size):
     # TODO: this should be a layer that keeps the number of dimensions,
     # and just alters the last dimension into EMBEDDING_SIZE
     # maybe reshape input layer into 2D, and then add embedding layer
-    l_emb = lasagne.layers.NiNLayer(
-        l_inp,
+    shuffle = lasagne.layers.DimshuffleLayer(l_inp, (0, 2, 1))
+    print("shuffled:", shuffle.output_shape)
+    l_emb = lasagne.layers.NINLayer(
+        shuffle,
         num_units=EMBEDDING_SIZE,
         nonlinearity=lasagne.nonlinearities.leaky_rectify,
         W=INI)
     # TODO: include bias?
-
     print("l_emb:", l_emb.output_shape)
+    shuffle2 = lasagne.layers.DimshuffleLayer(l_emb, (0, 2, 1))
+    print("shuffled:", shuffle2.output_shape)
 
-    l_drp0 = lasagne.layers.DropoutLayer(l_emb, p=dropout_frac)
+    l_drp0 = lasagne.layers.DropoutLayer(shuffle2, p=dropout_frac)
 
     def create_gate():
         return lasagne.layers.Gate(W_in=INI, W_hid=INI, W_cell=None)
@@ -127,6 +128,7 @@ feature_extractor = RapFeatureExtractor(train_filenames = train_filenames,
                                         model_word_len = MODEL_WORD_LEN,
                                         gzipped = gzipped)
 x_train, y_train, x_valid, y_valid = feature_extractor.extract()
+
 # TODO: feature_extractor should save vocab_length, other stuff in pickle file
 vocab_size = feature_extractor.vocab_length
 char2sym = feature_extractor.char2sym
@@ -143,7 +145,7 @@ for f in features:
     feature_vector_size = f.vector_dim
     total_model_len += REC_NUM_UNITS
 
-    input_X = T.imatrix()
+    input_X = T.itensor3()
     hid1_init_sym = T.matrix()
     hid2_init_sym = T.matrix()
     inputs['x'].append(input_X)
@@ -159,7 +161,7 @@ for f in features:
 
 inputs = inputs['x'] + inputs['y'] + inputs['h']
 
-concat_layer = lasagne.layers.ConcatLayer(final_layers, axis=1)
+concat_layer = lasagne.layers.ConcatLayer(final_layers, axis=2)
 
 # by reshaping we can combine feed-forward and recurrent layers in the
 # same Lasagne model.
@@ -167,7 +169,7 @@ print("total model len:", total_model_len)
 print("rec num units:", REC_NUM_UNITS)
 print(concat_layer.output_shape)
 l_shp = lasagne.layers.ReshapeLayer(concat_layer,
-                                    (BATCH_SIZE * total_model_len, REC_NUM_UNITS))
+                                    (BATCH_SIZE*MODEL_WORD_LEN, total_model_len))
 print(l_shp.output_shape)
 print("VOCAB SIZE:", vocab_size)
 l_out = lasagne.layers.DenseLayer(l_shp,
@@ -176,9 +178,9 @@ l_out = lasagne.layers.DenseLayer(l_shp,
 print("l_out:", l_out.output_shape)
 l_out = lasagne.layers.ReshapeLayer(l_out,
                                     (BATCH_SIZE,
-                                     total_model_len,
+                                     MODEL_WORD_LEN,
                                      vocab_size))
-
+print("l_out2:", l_out.output_shape)
 
 def calc_cross_ent(net_output, targets):
     # Helper function to calculate the cross entropy error
@@ -190,7 +192,7 @@ def calc_cross_ent(net_output, targets):
 
 # Note the use of deterministic keyword to disable dropout during evaluation.
 train_out_layers = lasagne.layers.get_output(
-        [l_out] + rec_layers, input_dict, deterministic=False)
+        [l_out] + rec_layers, inputs=input_dict, deterministic=False)
 train_out = train_out_layers[0]
 
 
@@ -201,7 +203,7 @@ train_out = train_out_layers[0]
 hidden_states_train = train_out_layers[1:]
 
 eval_out_layers = lasagne.layers.get_output(
-    [l_out] + rec_layers, input_dict, deterministic=True)
+    [l_out] + rec_layers,inputs=input_dict,  deterministic=True)
 eval_out = eval_out_layers[0]
 hidden_states_eval = eval_out_layers[1:]
 
@@ -243,6 +245,7 @@ f_eval = theano.function(inputs,
 # update rules.
 print("compiling f_train...")
 # used to be [t[:-1] for t in hidden_states_train]
+print("LENGTH DEF INTPUTS:", len(inputs))
 f_train = theano.function(inputs,
                           [cost_train, norm] +
                           [t for t in hidden_states_train],
@@ -262,13 +265,15 @@ def calc_perplexity(x, y):
     n_batches = x[0].shape[0] // BATCH_SIZE
     l_cost = []
 
-    hidden_states = [np.zeros((BATCH_SIZE, REC_NUM_UNITS),
+    hidden_states1 = [np.zeros((BATCH_SIZE, REC_NUM_UNITS),
+                           dtype='float32') for _ in xrange(len(x))]
+    hidden_states2 = [np.zeros((BATCH_SIZE, REC_NUM_UNITS),
                            dtype='float32') for _ in xrange(len(x))]
 
     for i in range(n_batches):
         x_batch = [f[i*BATCH_SIZE:(i+1)*BATCH_SIZE] for f in x]
         y_batch = y[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
-        inputs = x_batch + [y_batch] + hidden_states
+        inputs = x_batch + [y_batch] + hidden_states1 + hidden_states2
         output = f_eval(*inputs)
         cost = output[0]
         l_cost.append(cost)
@@ -283,13 +288,15 @@ for epoch in range(num_epochs):
     l_cost, l_norm, batch_time = [], [], time.time()
 
     # use zero as initial state
-    hidden_states = [np.zeros((BATCH_SIZE, REC_NUM_UNITS),
+    hidden_states1 = [np.zeros((BATCH_SIZE, REC_NUM_UNITS),
+                           dtype='float32') for _ in range(len(x_train))]
+    hidden_states2 = [np.zeros((BATCH_SIZE, REC_NUM_UNITS),
                            dtype='float32') for _ in range(len(x_train))]
     for i in range(n_batches_train):
         x_batch = [f[i*BATCH_SIZE:(i+1)*BATCH_SIZE] for f in x_train]
         y_batch = y_train[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
 
-        _inputs = x_batch + [y_batch] + hidden_states
+        _inputs = x_batch + [y_batch] + hidden_states1 + hidden_states2
         output = f_train(*_inputs)
         cost = output[0]
         norm = output[1]
