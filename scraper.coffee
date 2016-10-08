@@ -1,5 +1,24 @@
 request = require 'request'
 fs = require 'fs'
+
+JAYZ_ID = '3nFkdlSjzX9mRTtwJOzDYB'
+KENDRICK_ID = '2YZyLoL8N0Wb9xBt1NhZWg'
+TRIBE_CALLED_QUEST_ID = '09hVIj6vWgoCDtT03h8ZCa'
+GUCCI_MANE_ID = '13y7CgLHjMVRMDqxdx0Xdo'
+YACHTY = '6icQOAFXDZKsumw3YXyusw'
+WU_TANG = '34EP7KEpOjXcM2TCat1ISk'
+RUN_THE_JEWELS = '4RnBFZRiMLRyZy0AzzTg2C'
+MF_DOOM = '2pAWfrd7WFF3XhVt9GooDL'
+LIL_DICKY = '1tqhsYv8yBBdwANFNzHtcr'
+LIL_WAYNE = '55Aa2cqylxrFIXC767Z865'
+TYLER_THE_CREATOR = '4V8LLVI7PbaPR0K2TGSxFF'
+PUBLIC_ENEMY = '6Mo9PoU6svvhgEum7wh2Nd'
+THEORY_HAZIT = '23yxO4nVI3C2CoXIkYLifD'
+BEEDIE = '75haPGtpJ5ZotdoAg3FOTQ'
+DUMFOUNDEAD = '7LTShHcq1KdTrWeLvWoYed'
+JAZZ_ADDIXX = '7tPGimUaIMq6r5Qr8lzpSS'
+LIL_KIM = '5tth2a3v0sWwV1C7bApBdX'
+FIRST_ARTIST_ID = LIL_KIM
 # Set the configuration settings
 credentials =
     client:
@@ -19,7 +38,6 @@ module.exports.getArtists = (Genre, Artist)->
         if (error)
             return console.log('Access Token Error', error.message)
         token = oauth2.accessToken.create(result)
-        console.log "token:", token.token.access_token
 
         getRequestOptions = (token, url) ->
             header =
@@ -51,40 +69,38 @@ module.exports.getArtists = (Genre, Artist)->
 
 
         getAllArtistsBody = (token) ->
-            jayz_id = '3nFkdlSjzX9mRTtwJOzDYB'
             base_url = 'https://api.spotify.com/v1'
-            i = 0
             getRelatedArtistCallback = (prev_artist_id, artists) ->
-                i += 1
-                if i > 1
-                    return
                 related = (artist.id for artist in artists)
                 Artist.update({ _id: prev_artist_id }, { $set: { related: related }}).exec();
                 for artist in artists
                     saveArtistToDB artist, (artist_obj) ->
-                        getRelatedArtists token, base_url, artist_obj._id, artist.id, getRelatedArtistCallback
-            first_artist = getArtist token, base_url, jayz_id, (artist) ->
+                        if artist_obj?
+                            getRelatedArtists token, base_url, artist_obj._id, artist.id, (_id, artists)->
+                                setTimeout getRelatedArtistCallback, 500, _id, artists
+            first_artist = getArtist token, base_url, FIRST_ARTIST_ID, (artist) ->
                 saveArtistToDB artist, (artist_obj)->
-                    artist_id = artist.id
-                    artist_object_id = artist_obj._id
-                    getRelatedArtists token, base_url, artist_object_id, artist_id, getRelatedArtistCallback
+                    if artist_obj?
+                        artist_id = artist.id
+                        artist_object_id = artist_obj._id
+                        getRelatedArtists token, base_url, artist_object_id, artist_id, (prev_artist_id, artists)->
+                            setTimeout getRelatedArtistCallback, 500, prev_artist_id, artists
+                    else
+                        console.log "Not retrieving related artists, already have DB entry for #{artist.name}"
 
-        # TODO: move validators to within model, and set unique to True
         saveGenreToDB = (genre, next)->
-            if genre == "crunk"
-                console.log "CRUNK"
-            Genre.findOne {name: genre}, (err, obj)->
-                if genre == "crunk"
-                    console.log "STATUS:", err, obj
-                if obj?
-                    next obj
-                else
-                    genre = Genre({name:genre})
-                    genre.save (err)->
-                        if err
-                            next null
+            genre_obj = Genre({name:genre})
+            genre_obj.save (err)->
+                if err
+                    Genre.findOne {name:genre}, (err, obj) ->
+                        if obj?
+                            next obj
                         else
-                            next genre
+                            console.log "ERR SAVING GENRE: #{genre_obj.name}; #{err}"
+                            next null
+                else
+                    next genre
+
         saveArtistToDB = (artist, callback) ->
             if artist?
                 if artist.name? and artist.popularity? and artist.id?
@@ -92,27 +108,31 @@ module.exports.getArtists = (Genre, Artist)->
                     genre_id = 0
                     genre_objs = []
                     genre_callback = (genre_obj)->
-                        genre_objs.push genre_obj._id
+                        if genre_obj?
+                            genre_objs.push genre_obj._id
                         genre_id += 1
                         if genre_id < genres.length
                             saveGenreToDB genres[genre_id], genre_callback
                         else
-                            Artist.findOne {artist_id: artist.id}, (err, obj)->
-                                if obj?
-                                    callback obj
+                            artist_obj = Artist
+                                name: artist.name
+                                popularity: artist.popularity
+                                followers: artist.followers.total
+                                artist_id: artist.id
+                                genres: genre_objs
+                            artist_obj.save (err)->
+                                if err
+                                    callback null
+                                    ###
+                                      #Artist.findOne {name:artist.name}, (err, obj) ->
+                                      #    if obj?
+                                      #        callback obj
+                                      #    else
+                                      #        console.log "ERR SAVING ARTIST: #{artist.name}; #{err}"
+                                      #        callback null
+                                      ###
                                 else
-                                    artist_obj = Artist
-                                        name: artist.name
-                                        popularity: artist.popularity
-                                        followers: artist.followers.total
-                                        artist_id: artist.id
-                                        genres: genre_objs
-                                    artist_obj.save (err)->
-                                        if err
-                                            console.log "ERR SAVING ARTIST:",err
-                                            callback null
-                                        else
-                                            callback artist_obj
+                                    callback artist_obj
                     saveGenreToDB genres[genre_id], genre_callback
         getAllArtistsBody(token)
 

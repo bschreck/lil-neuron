@@ -1,14 +1,23 @@
 mongoose = require 'mongoose'
-deepPopulate = (require 'mongoose-deep-populate') mongoose
+uniqueValidator = require 'mongoose-unique-validator'
+#deepPopulate = (require 'mongoose-deep-populate') mongoose
 Schema = mongoose.Schema
 
 ArtistSchema = new Schema
-    artist_id: { type: String, index: true }
-    name: String
+    artist_id:
+        type: String
+        index: true
+        unique: true
+        required: true
+    name:
+        type: String
+        required: true
+        unique: true
     popularity: Number
     followers: Number
     related: [{type : String}]
     genres: [{type : mongoose.Schema.ObjectId, ref : 'Genre'}]
+ArtistSchema.plugin uniqueValidator
 #ArtistSchema.plugin deepPopulate, {}
 #ArtistSchema.methods.toFrontEnd = ->
 #    artist_id: this.artist_id

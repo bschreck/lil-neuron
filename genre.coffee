@@ -1,7 +1,11 @@
 mongoose = require 'mongoose'
+uniqueValidator = require 'mongoose-unique-validator'
 Schema = mongoose.Schema
 
 GenreSchema = new Schema
-    genre_id: { type: String, index: true }
-    name: String
+    name:
+        type: String
+        required: true
+        unique: true
+GenreSchema.plugin uniqueValidator
 module.exports = mongoose.model 'Genre', GenreSchema
