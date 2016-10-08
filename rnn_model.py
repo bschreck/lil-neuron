@@ -44,13 +44,13 @@ from extract_features import RapFeatureExtractor
 
 np.random.seed(1234)
 
-BATCH_SIZE = 3#50                     # batch size
-MODEL_WORD_LEN = 3#50                 # how many words to unroll
+BATCH_SIZE = 10#50                     # batch size
+MODEL_WORD_LEN = 10#50                 # how many words to unroll
                                     # (some features may have multiple
                                     #  symbols per word)
 TOL = 1e-6                          # numerial stability
 INI = lasagne.init.Uniform(0.1)     # initial parameter values
-EMBEDDING_SIZE = 20#400                # Embedding size
+EMBEDDING_SIZE = 10#400                # Embedding size
 REC_NUM_UNITS = 20#400                 # number of LSTM units
 
 dropout_frac = 0.1                  # optional recurrent dropout
@@ -119,8 +119,8 @@ def build_rnn(hid1_init_sym, hid2_init_sym, model_seq_len, word_vector_size):
     l_drp2 = lasagne.layers.DropoutLayer(l_rec2, p=dropout_frac)
     return [l_inp, l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2]
 
-train_filenames = ['data/test_rap.txt']
-valid_filenames = ['data/test_rap.txt']
+train_filenames = ['data/test_rap_with_nrp.txt']
+valid_filenames = ['data/test_rap_with_nrp.txt']
 gzipped = False
 feature_extractor = RapFeatureExtractor(train_filenames = train_filenames,
                                         valid_filenames = valid_filenames,

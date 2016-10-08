@@ -1,0 +1,611 @@
+{
+  "artists" : [ {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/5K4W6rqBFWDnAN6FQUkS6x"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 3635800
+    },
+    "genres" : [ "pop christmas", "pop rap", "rap" ],
+    "href" : "https://api.spotify.com/v1/artists/5K4W6rqBFWDnAN6FQUkS6x",
+    "id" : "5K4W6rqBFWDnAN6FQUkS6x",
+    "images" : [ {
+      "height" : 332,
+      "url" : "https://i.scdn.co/image/68a865ec5b48399772c4084a5b462e01c4974030",
+      "width" : 331
+    }, {
+      "height" : 201,
+      "url" : "https://i.scdn.co/image/15d03d22d4eae642441995343500e1560f1b2c27",
+      "width" : 200
+    }, {
+      "height" : 64,
+      "url" : "https://i.scdn.co/image/68bb1f8173bf46df2bf8210f5ef5ec73fd1143b4",
+      "width" : 64
+    } ],
+    "name" : "Kanye West",
+    "popularity" : 93,
+    "type" : "artist",
+    "uri" : "spotify:artist:5K4W6rqBFWDnAN6FQUkS6x"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/3TVXtAsR1Inumwj472S9r4"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 6700511
+    },
+    "genres" : [ "canadian pop", "hip hop", "pop rap", "rap" ],
+    "href" : "https://api.spotify.com/v1/artists/3TVXtAsR1Inumwj472S9r4",
+    "id" : "3TVXtAsR1Inumwj472S9r4",
+    "images" : [ {
+      "height" : 640,
+      "url" : "https://i.scdn.co/image/cb080366dc8af1fe4dc90c4b9959794794884c66",
+      "width" : 640
+    }, {
+      "height" : 320,
+      "url" : "https://i.scdn.co/image/6bd672a0f33705eda4b543c304c21a152f393291",
+      "width" : 320
+    }, {
+      "height" : 160,
+      "url" : "https://i.scdn.co/image/085ae2e76f402468fe9982851b51cf876e4f20fe",
+      "width" : 160
+    } ],
+    "name" : "Drake",
+    "popularity" : 100,
+    "type" : "artist",
+    "uri" : "spotify:artist:3TVXtAsR1Inumwj472S9r4"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/1ZwdS5xdxEREPySFridCfh"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 1698538
+    },
+    "genres" : [ "dirty south rap", "g funk", "gangster rap", "hip hop", "pop rap", "rap", "southern hip hop", "west coast rap" ],
+    "href" : "https://api.spotify.com/v1/artists/1ZwdS5xdxEREPySFridCfh",
+    "id" : "1ZwdS5xdxEREPySFridCfh",
+    "images" : [ {
+      "height" : 1000,
+      "url" : "https://i.scdn.co/image/fdb2382075f400ca2f2fbddaebb93add82ca8f32",
+      "width" : 1000
+    }, {
+      "height" : 640,
+      "url" : "https://i.scdn.co/image/e92cf49011e4c26f736cd479b0b64cb08f1b52c6",
+      "width" : 640
+    }, {
+      "height" : 200,
+      "url" : "https://i.scdn.co/image/0334d2f0cd1eb65f81831c4ddf4a0b249479564c",
+      "width" : 200
+    }, {
+      "height" : 64,
+      "url" : "https://i.scdn.co/image/c9baaaa56cc3e4c1b5b60e09632ba8b78ff52abd",
+      "width" : 64
+    } ],
+    "name" : "2Pac",
+    "popularity" : 79,
+    "type" : "artist",
+    "uri" : "spotify:artist:1ZwdS5xdxEREPySFridCfh"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/5me0Irg2ANcsgc93uaYrpb"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 1069014
+    },
+    "genres" : [ "dirty south rap", "east coast hip hop", "gangster rap", "hardcore hip hop", "hip hop", "hip pop", "pop rap", "rap", "southern hip hop" ],
+    "href" : "https://api.spotify.com/v1/artists/5me0Irg2ANcsgc93uaYrpb",
+    "id" : "5me0Irg2ANcsgc93uaYrpb",
+    "images" : [ {
+      "height" : 1250,
+      "url" : "https://i.scdn.co/image/1b4858fbd24046a81cace5ee18d19c868262b91f",
+      "width" : 1000
+    }, {
+      "height" : 800,
+      "url" : "https://i.scdn.co/image/9bb42de208edcb69653a8e7951fa93b13f598cdd",
+      "width" : 640
+    }, {
+      "height" : 250,
+      "url" : "https://i.scdn.co/image/e56612ae56c9007e99ab36b83efd4faf6401260d",
+      "width" : 200
+    }, {
+      "height" : 80,
+      "url" : "https://i.scdn.co/image/fc074d287739cca12a89c76fd338ff7d4aa4acee",
+      "width" : 64
+    } ],
+    "name" : "The Notorious B.I.G.",
+    "popularity" : 78,
+    "type" : "artist",
+    "uri" : "spotify:artist:5me0Irg2ANcsgc93uaYrpb"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/55Aa2cqylxrFIXC767Z865"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 2762365
+    },
+    "genres" : [ "dirty south rap", "hip hop", "pop christmas", "pop rap", "rap", "southern hip hop", "trap music" ],
+    "href" : "https://api.spotify.com/v1/artists/55Aa2cqylxrFIXC767Z865",
+    "id" : "55Aa2cqylxrFIXC767Z865",
+    "images" : [ {
+      "height" : 1239,
+      "url" : "https://i.scdn.co/image/cf012139c3b8681b46a66bae70558a8a336ab231",
+      "width" : 1000
+    }, {
+      "height" : 793,
+      "url" : "https://i.scdn.co/image/fffd48d60e27901f6e9ce99423f045cb2b893944",
+      "width" : 640
+    }, {
+      "height" : 248,
+      "url" : "https://i.scdn.co/image/bf03141629c202e94b206f1374a39326a9d8c6ca",
+      "width" : 200
+    }, {
+      "height" : 79,
+      "url" : "https://i.scdn.co/image/521f99f2469883b8806a69a3a2487fdd983bd621",
+      "width" : 64
+    } ],
+    "name" : "Lil Wayne",
+    "popularity" : 91,
+    "type" : "artist",
+    "uri" : "spotify:artist:55Aa2cqylxrFIXC767Z865"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/7dGJo4pcD2V6oG8kP0tJRR"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 5957235
+    },
+    "genres" : [ "detroit hip hop", "g funk", "hip hop", "pop rap", "rap" ],
+    "href" : "https://api.spotify.com/v1/artists/7dGJo4pcD2V6oG8kP0tJRR",
+    "id" : "7dGJo4pcD2V6oG8kP0tJRR",
+    "images" : [ {
+      "height" : 621,
+      "url" : "https://i.scdn.co/image/15c446495ae50039ba2bef43172c66240fe0605a",
+      "width" : 1000
+    }, {
+      "height" : 397,
+      "url" : "https://i.scdn.co/image/184c822d252ceb7561539063a904ef433ac43562",
+      "width" : 640
+    }, {
+      "height" : 124,
+      "url" : "https://i.scdn.co/image/0059ebe7ea62b9efde13eda6c6bbc605382b41e6",
+      "width" : 200
+    }, {
+      "height" : 40,
+      "url" : "https://i.scdn.co/image/683e358f53d8a3d5ae8ae76053811e836931c94a",
+      "width" : 64
+    } ],
+    "name" : "Eminem",
+    "popularity" : 90,
+    "type" : "artist",
+    "uri" : "spotify:artist:7dGJo4pcD2V6oG8kP0tJRR"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/6l3HvQ5sa6mXTsMTB19rO5"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 1758697
+    },
+    "genres" : [ "pop rap", "rap", "southern hip hop" ],
+    "href" : "https://api.spotify.com/v1/artists/6l3HvQ5sa6mXTsMTB19rO5",
+    "id" : "6l3HvQ5sa6mXTsMTB19rO5",
+    "images" : [ {
+      "height" : 666,
+      "url" : "https://i.scdn.co/image/610d5082ddf4480038d7f9cd948de4253fb02b97",
+      "width" : 999
+    }, {
+      "height" : 427,
+      "url" : "https://i.scdn.co/image/9df2d53a954500a124d2ed3b29a072a36f7cfbff",
+      "width" : 640
+    }, {
+      "height" : 133,
+      "url" : "https://i.scdn.co/image/a0273751ab4fed220208b90e4c4fc1812cc37e16",
+      "width" : 200
+    }, {
+      "height" : 43,
+      "url" : "https://i.scdn.co/image/c54e9ca7f8e3d19e48cf2468533abbeefec5106f",
+      "width" : 64
+    } ],
+    "name" : "J. Cole",
+    "popularity" : 84,
+    "type" : "artist",
+    "uri" : "spotify:artist:6l3HvQ5sa6mXTsMTB19rO5"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/4OBJLual30L7gRl5UkeRcT"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 902548
+    },
+    "genres" : [ "crunk", "dance pop", "dirty south rap", "gangster rap", "hip hop", "hip pop", "pop rap", "rap", "southern hip hop", "trap music" ],
+    "href" : "https://api.spotify.com/v1/artists/4OBJLual30L7gRl5UkeRcT",
+    "id" : "4OBJLual30L7gRl5UkeRcT",
+    "images" : [ {
+      "height" : 1500,
+      "url" : "https://i.scdn.co/image/d7f0ced3736bf30ee9ab70b4cf77f09a31ead13e",
+      "width" : 1000
+    }, {
+      "height" : 960,
+      "url" : "https://i.scdn.co/image/016c2b0df67d10583cdd3dda9bc1ff834545573e",
+      "width" : 640
+    }, {
+      "height" : 300,
+      "url" : "https://i.scdn.co/image/86e3d942c32b82f0a2732777a32f9b3dabd984d4",
+      "width" : 200
+    }, {
+      "height" : 96,
+      "url" : "https://i.scdn.co/image/fd4988d4da581fc3749490c71303230aa70199d6",
+      "width" : 64
+    } ],
+    "name" : "T.I.",
+    "popularity" : 79,
+    "type" : "artist",
+    "uri" : "spotify:artist:4OBJLual30L7gRl5UkeRcT"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/5Y5TRrQiqgUO4S36tzjIRZ"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 315468
+    },
+    "genres" : [ "crunk", "dance pop", "dirty south rap", "gangster rap", "hip hop", "hip pop", "pop", "pop rap", "r&b", "rap", "southern hip hop", "urban contemporary" ],
+    "href" : "https://api.spotify.com/v1/artists/5Y5TRrQiqgUO4S36tzjIRZ",
+    "id" : "5Y5TRrQiqgUO4S36tzjIRZ",
+    "images" : [ {
+      "height" : 598,
+      "url" : "https://i.scdn.co/image/5b7374c735eebfd9f3e27a01ec7ef5492e54438e",
+      "width" : 999
+    }, {
+      "height" : 383,
+      "url" : "https://i.scdn.co/image/94ca82ace86b15d66698d8f43cdb53b4cebf1db9",
+      "width" : 640
+    }, {
+      "height" : 120,
+      "url" : "https://i.scdn.co/image/921db34216938a87abaf511b0e39b12187c457e9",
+      "width" : 200
+    }, {
+      "height" : 38,
+      "url" : "https://i.scdn.co/image/83e301c50295b493bf8ec18727a374389fb2e571",
+      "width" : 64
+    } ],
+    "name" : "Timbaland",
+    "popularity" : 73,
+    "type" : "artist",
+    "uri" : "spotify:artist:5Y5TRrQiqgUO4S36tzjIRZ"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/2YZyLoL8N0Wb9xBt1NhZWg"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 2674805
+    },
+    "genres" : [ "hip hop", "pop rap", "rap", "trap music", "west coast rap" ],
+    "href" : "https://api.spotify.com/v1/artists/2YZyLoL8N0Wb9xBt1NhZWg",
+    "id" : "2YZyLoL8N0Wb9xBt1NhZWg",
+    "images" : [ {
+      "height" : 1000,
+      "url" : "https://i.scdn.co/image/b1947120c60a8f2886c98faf52a61895821c7cf0",
+      "width" : 1000
+    }, {
+      "height" : 640,
+      "url" : "https://i.scdn.co/image/c50721f32900d561d44f38006208ab69717fe1f9",
+      "width" : 640
+    }, {
+      "height" : 200,
+      "url" : "https://i.scdn.co/image/762628b9c2bf991e6f9325522dab32c0cf7c06a2",
+      "width" : 200
+    }, {
+      "height" : 64,
+      "url" : "https://i.scdn.co/image/876101e8b1a981d5d6f9257f0f6ddd15087bdfd5",
+      "width" : 64
+    } ],
+    "name" : "Kendrick Lamar",
+    "popularity" : 89,
+    "type" : "artist",
+    "uri" : "spotify:artist:2YZyLoL8N0Wb9xBt1NhZWg"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/0fA0VVWsXO9YnASrzqfmYu"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 1420275
+    },
+    "genres" : [ "dirty south rap", "hip hop", "indie r&b", "pop rap", "rap", "southern hip hop", "trap music" ],
+    "href" : "https://api.spotify.com/v1/artists/0fA0VVWsXO9YnASrzqfmYu",
+    "id" : "0fA0VVWsXO9YnASrzqfmYu",
+    "images" : [ {
+      "height" : 660,
+      "url" : "https://i.scdn.co/image/fe6bab948a4650b5ef340aaa0fb6545c4a048b99",
+      "width" : 990
+    }, {
+      "height" : 427,
+      "url" : "https://i.scdn.co/image/39f475e0cb86a847dff51b571352c9e6b5bea41c",
+      "width" : 640
+    }, {
+      "height" : 133,
+      "url" : "https://i.scdn.co/image/b93e4213fc23d18d4b9b967caa2e04a1ca5dfc55",
+      "width" : 200
+    }, {
+      "height" : 43,
+      "url" : "https://i.scdn.co/image/46ac7d79bf65571502b401fa2f1ca231ab0d46a6",
+      "width" : 64
+    } ],
+    "name" : "Kid Cudi",
+    "popularity" : 77,
+    "type" : "artist",
+    "uri" : "spotify:artist:0fA0VVWsXO9YnASrzqfmYu"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/2B4ZHz4QDWJTXPFPgO5peE"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 129349
+    },
+    "genres" : [ "crunk", "dirty south rap", "g funk", "gangster rap", "hardcore hip hop", "hip hop", "pop rap", "rap", "southern hip hop", "west coast rap" ],
+    "href" : "https://api.spotify.com/v1/artists/2B4ZHz4QDWJTXPFPgO5peE",
+    "id" : "2B4ZHz4QDWJTXPFPgO5peE",
+    "images" : [ {
+      "height" : 1415,
+      "url" : "https://i.scdn.co/image/b4e391e4baf471b23cbb34ca6a7fdfb972f01177",
+      "width" : 1000
+    }, {
+      "height" : 905,
+      "url" : "https://i.scdn.co/image/504a16559393702b641beeee6bec8b2fbeaecc9d",
+      "width" : 640
+    }, {
+      "height" : 283,
+      "url" : "https://i.scdn.co/image/28c4009b0e086d6c5e4f2d3cbe44a5dce692beaa",
+      "width" : 200
+    }, {
+      "height" : 91,
+      "url" : "https://i.scdn.co/image/a957aa25534e73b6ccc20df16710f98adb91333c",
+      "width" : 64
+    } ],
+    "name" : "Warren G",
+    "popularity" : 64,
+    "type" : "artist",
+    "uri" : "spotify:artist:2B4ZHz4QDWJTXPFPgO5peE"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/59wfkuBoNyhDMQGCljbUbA"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 128518
+    },
+    "genres" : [ "crunk", "dance pop", "dirty south rap", "east coast hip hop", "hardcore hip hop", "hip hop", "hip pop", "pop", "pop rap", "r&b", "rap" ],
+    "href" : "https://api.spotify.com/v1/artists/59wfkuBoNyhDMQGCljbUbA",
+    "id" : "59wfkuBoNyhDMQGCljbUbA",
+    "images" : [ {
+      "height" : 640,
+      "url" : "https://i.scdn.co/image/605b9f65fff2dee52625aac975d146f13cc6bf1d",
+      "width" : 640
+    }, {
+      "height" : 320,
+      "url" : "https://i.scdn.co/image/a7dc10ac643dc99b6de28a66f8c9189c48c4696e",
+      "width" : 320
+    }, {
+      "height" : 160,
+      "url" : "https://i.scdn.co/image/9e1b116874b59170df36dd4b7f3fa14bc8f0881f",
+      "width" : 160
+    } ],
+    "name" : "Diddy",
+    "popularity" : 71,
+    "type" : "artist",
+    "uri" : "spotify:artist:59wfkuBoNyhDMQGCljbUbA"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/0QHgL1lAIqAw0HtD7YldmP"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 583308
+    },
+    "genres" : [ "crunk", "dirty south rap", "gangster rap", "pop rap", "rap", "southern hip hop", "trap music" ],
+    "href" : "https://api.spotify.com/v1/artists/0QHgL1lAIqAw0HtD7YldmP",
+    "id" : "0QHgL1lAIqAw0HtD7YldmP",
+    "images" : [ {
+      "height" : 640,
+      "url" : "https://i.scdn.co/image/bc7ff5c1ce806156a5697053c14abefc9fddbeeb",
+      "width" : 640
+    }, {
+      "height" : 320,
+      "url" : "https://i.scdn.co/image/61fbb402fcc479561eaddff925670fc6d9336b98",
+      "width" : 320
+    }, {
+      "height" : 160,
+      "url" : "https://i.scdn.co/image/8d2118ab9ae51fc00fd63634141f6165bf5fc541",
+      "width" : 160
+    } ],
+    "name" : "DJ Khaled",
+    "popularity" : 81,
+    "type" : "artist",
+    "uri" : "spotify:artist:0QHgL1lAIqAw0HtD7YldmP"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/67nwj3Y5sZQLl72VNUHEYE"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 546984
+    },
+    "genres" : [ "dirty south rap", "gangster rap", "hip hop", "indie r&b", "pop rap", "r&b", "rap", "southern hip hop", "trap music" ],
+    "href" : "https://api.spotify.com/v1/artists/67nwj3Y5sZQLl72VNUHEYE",
+    "id" : "67nwj3Y5sZQLl72VNUHEYE",
+    "images" : [ {
+      "height" : 667,
+      "url" : "https://i.scdn.co/image/fed6a6277082a4c5328adc8e27d784fc16075e08",
+      "width" : 1000
+    }, {
+      "height" : 427,
+      "url" : "https://i.scdn.co/image/0221fa7189e16f5dc868dcb6b92f8009d8715b02",
+      "width" : 640
+    }, {
+      "height" : 133,
+      "url" : "https://i.scdn.co/image/98f30c9cc2872bbbaee2d0294959f0220c130615",
+      "width" : 200
+    }, {
+      "height" : 43,
+      "url" : "https://i.scdn.co/image/2e099b1289371943cd609965616926ccea1ee141",
+      "width" : 64
+    } ],
+    "name" : "Wale",
+    "popularity" : 76,
+    "type" : "artist",
+    "uri" : "spotify:artist:67nwj3Y5sZQLl72VNUHEYE"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/0Mz5XE0kb1GBnbLQm2VbcO"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 237558
+    },
+    "genres" : [ "alternative hip hop", "dirty south rap", "east coast hip hop", "gangster rap", "hardcore hip hop", "hip hop", "pop rap", "rap", "southern hip hop" ],
+    "href" : "https://api.spotify.com/v1/artists/0Mz5XE0kb1GBnbLQm2VbcO",
+    "id" : "0Mz5XE0kb1GBnbLQm2VbcO",
+    "images" : [ {
+      "height" : 764,
+      "url" : "https://i.scdn.co/image/eae06411463fb7ffea6a433c9d22f11418a1f7da",
+      "width" : 600
+    }, {
+      "height" : 255,
+      "url" : "https://i.scdn.co/image/d5fec1743c5af5eb5fccecee7b5a6037eb3bfa87",
+      "width" : 200
+    }, {
+      "height" : 81,
+      "url" : "https://i.scdn.co/image/cc0165937957a92af9a0b6cf5e85f61ab8ed043b",
+      "width" : 64
+    } ],
+    "name" : "Mos Def",
+    "popularity" : 65,
+    "type" : "artist",
+    "uri" : "spotify:artist:0Mz5XE0kb1GBnbLQm2VbcO"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/1sBkRIssrMs1AbVkOJbc7a"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 752759
+    },
+    "genres" : [ "crunk", "dirty south rap", "gangster rap", "hip hop", "pop rap", "rap", "southern hip hop", "trap music" ],
+    "href" : "https://api.spotify.com/v1/artists/1sBkRIssrMs1AbVkOJbc7a",
+    "id" : "1sBkRIssrMs1AbVkOJbc7a",
+    "images" : [ {
+      "height" : 1000,
+      "url" : "https://i.scdn.co/image/a8d9c1ae4760377ab19b2b734d78f226d0f7108c",
+      "width" : 1000
+    }, {
+      "height" : 640,
+      "url" : "https://i.scdn.co/image/ab7b3bc79f376b57b079432343711e8924448872",
+      "width" : 640
+    }, {
+      "height" : 200,
+      "url" : "https://i.scdn.co/image/13520d28a80accac8f46594e0378ff53c5903853",
+      "width" : 200
+    }, {
+      "height" : 64,
+      "url" : "https://i.scdn.co/image/ae5fcc364a7925b72bc06f5d2e4d4ab334423de2",
+      "width" : 64
+    } ],
+    "name" : "Rick Ross",
+    "popularity" : 81,
+    "type" : "artist",
+    "uri" : "spotify:artist:1sBkRIssrMs1AbVkOJbc7a"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/6evKD5JWJON3qPBJtUEmtY"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 96252
+    },
+    "genres" : [ "crunk", "dirty south rap", "gangster rap", "hardcore hip hop", "hip hop", "hip pop", "pop rap", "rap", "southern hip hop" ],
+    "href" : "https://api.spotify.com/v1/artists/6evKD5JWJON3qPBJtUEmtY",
+    "id" : "6evKD5JWJON3qPBJtUEmtY",
+    "images" : [ {
+      "height" : 400,
+      "url" : "https://i.scdn.co/image/94c7aa6f9b05d48952e29861c5b2f0238cffddb8",
+      "width" : 600
+    }, {
+      "height" : 133,
+      "url" : "https://i.scdn.co/image/127283b1869d6df51ce2620288dc2102ec2a25f1",
+      "width" : 200
+    }, {
+      "height" : 43,
+      "url" : "https://i.scdn.co/image/d6772af65d8302770e15a35b9d6c3ac6ed9b6bd9",
+      "width" : 64
+    } ],
+    "name" : "G-Unit",
+    "popularity" : 59,
+    "type" : "artist",
+    "uri" : "spotify:artist:6evKD5JWJON3qPBJtUEmtY"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/4jWzNq3sdzSpqn7BnzvIKn"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 12582
+    },
+    "genres" : [ "crunk", "dirty south rap", "east coast hip hop", "gangster rap", "hardcore hip hop", "hip hop", "hip pop", "pop rap", "rap", "southern hip hop" ],
+    "href" : "https://api.spotify.com/v1/artists/4jWzNq3sdzSpqn7BnzvIKn",
+    "id" : "4jWzNq3sdzSpqn7BnzvIKn",
+    "images" : [ {
+      "height" : 200,
+      "url" : "https://i.scdn.co/image/1274dd07906b12886be151cd12f9333d2fc58a49",
+      "width" : 200
+    }, {
+      "height" : 64,
+      "url" : "https://i.scdn.co/image/c33f329e3ff9b51b2f82029bc89e30bade29ce19",
+      "width" : 64
+    } ],
+    "name" : "Memphis Bleek",
+    "popularity" : 49,
+    "type" : "artist",
+    "uri" : "spotify:artist:4jWzNq3sdzSpqn7BnzvIKn"
+  }, {
+    "external_urls" : {
+      "spotify" : "https://open.spotify.com/artist/0NbfKEOTQCcwd6o7wSDOHI"
+    },
+    "followers" : {
+      "href" : null,
+      "total" : 635704
+    },
+    "genres" : [ "crunk", "dirty south rap", "gangster rap", "hip hop", "pop rap", "rap", "southern hip hop", "trap music" ],
+    "href" : "https://api.spotify.com/v1/artists/0NbfKEOTQCcwd6o7wSDOHI",
+    "id" : "0NbfKEOTQCcwd6o7wSDOHI",
+    "images" : [ {
+      "height" : 751,
+      "url" : "https://i.scdn.co/image/7e370d02207a01caef5ad536a6702037b7e7a9f3",
+      "width" : 1000
+    }, {
+      "height" : 481,
+      "url" : "https://i.scdn.co/image/400837ed144f910010017a3ba49e8b4c926e78d0",
+      "width" : 640
+    }, {
+      "height" : 150,
+      "url" : "https://i.scdn.co/image/390cf82e86eaf0c6fb280d308858e3e712ab8c34",
+      "width" : 200
+    }, {
+      "height" : 48,
+      "url" : "https://i.scdn.co/image/ca5a2a7e5ea6f8ae4c73adbb7d62caa9f8149665",
+      "width" : 64
+    } ],
+    "name" : "The Game",
+    "popularity" : 77,
+    "type" : "artist",
+    "uri" : "spotify:artist:0NbfKEOTQCcwd6o7wSDOHI"
+  } ]
+}

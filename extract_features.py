@@ -11,19 +11,12 @@ import pronouncing
 import numpy as np
 import cPickle as pickle
 import os
+import pdb
 import gzip
 from features import PhonemeFeature, WordFeature, StressFeature
 from features import RawStresses, RawPhonemes, RawWordsAsChars
 
-EOV = -2
-EOP = -3
-EOS = -4
-# NRP = -5
-# TODO: Also include EOV (end of verse), NRP (new rapper),
-# NRP is followed by an integer (which becomes an embedding)
-# representing the rapper who is rapping the current verse
-
-# TODO: all these are simple loops and should be in Cython
+# TODO: all these are simple loops and could be in Cython if need be
 
 
 class RapFeatureExtractor(object):
@@ -72,8 +65,11 @@ class RapFeatureExtractor(object):
         for s in special_symbols:
             self.word2sym[s] = self.vocab_length
             self.sym2word[self.vocab_length] = s
-            self.special_symbols[s] = np.array(self.vocab_length)
+            self.special_symbols[s] = self.vocab_length
             self.vocab_length += 1
+
+        self.rapper2sym = {}
+        self.sym2rapper = {}
 
         self.train_word_syms = []
         self.train_char_syms = []
@@ -91,21 +87,59 @@ class RapFeatureExtractor(object):
                                 RawStresses(),
                                 RawPhonemes()]
 
+    def _add_rappers(self, *rappers):
+        rapper_syms = []
+        for unformatted_rapper in rappers:
+            rapper = unformatted_rapper.lower()
+            if rapper not in self.rapper2sym:
+                cur_sym = len(self.rapper2sym)
+                self.rapper2sym[rapper] = cur_sym
+                self.sym2rapper[cur_sym] = rapper
+            else:
+                cur_sym = self.rapper2sym[rapper]
+            rapper_syms.append(np.array(cur_sym))
+        return rapper_syms
+
+    def _nrp_line(self, line):
+        words = line.split(', ')
+        if words[0].startswith('[') and words[-1].endswith(']'):
+            first_rapper = words[0].split('[', 1)[1]
+            if len(words) > 1:
+                last_rapper = words[-1][:-1]
+            else:
+                first_rapper = first_rapper[:-1]
+                return self._add_rappers(first_rapper)
+            if len(words) > 2:
+                other_rappers = words[1:-1]
+            else:
+                other_rappers = []
+            rappers = [first_rapper] + other_rappers + [last_rapper]
+            return self._add_rappers(*rappers)
+        return None
 
     def _process_line(self, line):
         line = line.lstrip().rstrip()
+        new_rappers = self._nrp_line(line)
+        if new_rappers is not None:
+            word_feat = [self.special_symbols['<nrp>']] + new_rappers + [self.special_symbols['<eos>']]
+            char_feat = [np.array(word_feat)]
+            other_feats = [char_feat]
+            return [word_feat, char_feat, other_feats, other_feats]
+
         words = line.split(" ")
-        # TODO: Parse NRP
+
         if len(words) == 1 and words[0] == '':
-            return ([self.special_symbols['<eov>']],
-                    [np.array([self.special_symbols['<eov>']])],
-                    [[np.array([self.special_symbols['<eov>']])]],
-                    [[np.array([self.special_symbols['<eov>']])]])
+            word_feat = [self.special_symbols['<eov>']]
+            char_feat = [np.array(word_feat)]
+            other_feats = [char_feat]
+            return [word_feat, char_feat, other_feats, other_feats]
+
         if len(words) == 1 and words[0] in self.special_symbols:
-            return ([self.special_symbols(words[0])],
-                    [np.array([self.special_symbols(words[0])])],
-                    [[np.array([self.special_symbols(words[0])])]],
-                    [[np.array([self.special_symbols(words[0])])]])
+            word_feat = [self.special_symbols[words[0]]]
+            char_feat = [np.array(word_feat)]
+            other_feats = [char_feat]
+            return [word_feat, char_feat, other_feats, other_feats]
+
         line_word_syms = []
         line_char_syms = []
         line_phones = []
@@ -206,6 +240,10 @@ class RapFeatureExtractor(object):
             self._calc_num_batches(len(self.valid_char_syms))
 
     def _calc_num_batches(self, len_symbols):
+        if len_symbols % (self.batch_size * self.model_word_len) == 0:
+            print(" x_in.shape[0] % (batch_size*model_word_len) == 0 -> x_in is "
+                  "set to x_in = x_in[:-1]")
+            len_symbols -= 1
         div = len_symbols // (self.batch_size * self.model_word_len)
         x_resize = div * self.model_word_len * self.batch_size
         n_samples = x_resize // self.model_word_len
@@ -237,10 +275,7 @@ class RapFeatureExtractor(object):
         self.train_stress_syms, self.valid_stress_syms = new_phone_vectors[2:]
 
     def _reorder_data(self, x_in, n_batches, n_samples, x_resize, vector_dim):
-        if x_in.shape[0] % (self.batch_size * self.model_word_len) == 0:
-            print(" x_in.shape[0] % (batch_size*model_word_len) == 0 -> x_in is "
-                  "set to x_in = x_in[:-1]")
-            x_in = x_in[:-1]
+
 
         if vector_dim > 0:
             args = [n_samples, self.model_word_len, vector_dim]
@@ -334,7 +369,7 @@ class RapFeatureExtractor(object):
 
 if __name__ == '__main__':
     # filenames = ['data/test_ints.txt']
-    filenames = ['data/test_rap.txt']
+    filenames = ['data/test_rap_with_nrp.txt']
     test_rap = range(100)
     test_rap = ' '.join([str(x) for x in test_rap])
     with open('data/test_ints.txt', 'wb') as f:
@@ -353,5 +388,6 @@ if __name__ == '__main__':
                                     char2sym=char2sym,
                                     sym2char=sym2char,
                                     gzipped=False)
-    x_train, y_train, x_valid, y_valid = extractor.extract()
+    extractor._load_data()
+    #x_train, y_train, x_valid, y_valid = extractor.extract()
     # print x_train, y_train
