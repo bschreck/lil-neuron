@@ -36,9 +36,9 @@ def get_all_rappers(objects=False, remove_punc=True, wikia_spelling=False,
 
     if wikia_spelling:
         artists = db.artists.find({'wikia_spelling': {'$exists': True,
-                                                      '$ne': ''}})
+                                                      '$ne': ''}}, no_cursor_timeout=True)
     else:
-        artists = db.artists.find()
+        artists = db.artists.find(no_cursor_timeout=True)
 
     if remove_punc:
         attr = 'name'
@@ -67,10 +67,14 @@ def form_url(path):
 
 
 def wait():
-    # wait ~1 second
-    wait = np.random.random()
-    wait = 1 + ((wait - .5) / 3)
-    time.sleep(wait)
+    do_wait = np.random.random() > .95
+    if do_wait:
+        print "WAITING 1 MINUTE"
+        sys.stdout.flush()
+        # wait 1 minute
+        time.sleep(60)
+        print "DONE"
+        sys.stdout.flush()
 
 
 def get_artist_page(artist_name):
@@ -82,13 +86,14 @@ def get_artist_page(artist_name):
 
 def scrape_song(song_url, current_rapper):
     url = form_url(song_url)
+    if url.find('?action=edit') > -1:
+        return None
     wait()
     r = requests.get(url)
     soup = BeautifulSoup(r.text, "html.parser")
     try:
         lyricbox = soup.find_all('div', 'lyricbox')[0]
     except Exception:
-        print "EXCEPTION AT URL: {}".format(url)
         return None
     else:
         verses = []
@@ -202,8 +207,8 @@ def scrape_artist(doc):
     unnamed_index = 0
     try:
         albums.children
-    except Exception as e:
-        print "COULD NOT ACCESS ALBUMS FOR: {}".format(doc['name'])
+    except Exception:
+        pass
     else:
         for child in albums.children:
             if not isinstance(child, Tag):
@@ -241,26 +246,36 @@ def scrape_artist(doc):
 
         try:
             save_artist_albums_to_db(doc['artist_id'], all_albums)
-        except Exception as e:
-            print "ERROR SAVING ALBUMS FOR: {}".format(doc['name'])
-
-        for album_index, album in all_albums.iteritems():
-            # first_album_index = album_index
-            for song_index, song in album['songs'].iteritems():
-                # first_song_index = song_index
-                url = song['url']
-                try:
-                    lyrics = scrape_song(url, doc)
-                except Exception as e:
-                    print "ERROR SCRAPING LYRICS: {} FOR URL: {}".format(e, url)
-                update_projection = {'artist_id': doc['artist_id']}
-                key = 'albums.{}.songs.{}.lyrics'.format(album_index,
-                                                         song_index)
-                update_doc = {'$set': {key: lyrics}}
-                try:
-                    db.artists.update(update_projection, update_doc)
-                except Exception as e:
-                    print "ERROR SAVING LYRICS: {}".format(e)
+        except Exception:
+            pass
+        else:
+            for album_index, album in all_albums.iteritems():
+                # first_album_index = album_index
+                for song_index, song in album['songs'].iteritems():
+                    # first_song_index = song_index
+                    url = song['url']
+                    print "TRYING URL: {}".format(url)
+                    update_projection = {'artist_id': doc['artist_id']}
+                    key = 'albums.{}.songs.{}.lyrics'.format(album_index,
+                                                             song_index)
+                    existing_lyrics = db.artists.find_one(update_projection,
+                                                          {key: True})
+                    if key in existing_lyrics and existing_lyrics[key]:
+                        print "EXISTING LYRICS"
+                        continue
+                    try:
+                        lyrics = scrape_song(url, doc)
+                    except Exception:
+                        pass
+                    else:
+                        if lyrics:
+                            sys.stdout.flush()
+                            print "SCRAPED LYRICS FOR URL: {}".format(url)
+                            update_doc = {'$set': {key: lyrics}}
+                            try:
+                                db.artists.update(update_projection, update_doc)
+                            except Exception:
+                                pass
 
 
 def save_artist_albums_to_db(artist_id, albums):
@@ -326,13 +341,19 @@ def find_no_wikia():
 def scrape_all_rappers(n=-1):
     rappers = get_all_rappers(wikia_spelling=True, objects=True,
                               remove_punc=False)
+    rappers.batch_size(25)
     i = 0
+    existing_rappers = []
     for rapper in tqdm(rappers):
+        if 'albums' in rapper:
+            existing_rappers.append(rapper['artist_id'])
+            continue
         scrape_artist(rapper)
         sys.stdout.flush()
         if i == n - 1:
             return
         i += 1
+    print existing_rappers
 
 if __name__ == '__main__':
     global client
