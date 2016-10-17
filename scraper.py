@@ -341,19 +341,20 @@ def find_no_wikia():
 def scrape_all_rappers(n=-1):
     rappers = get_all_rappers(wikia_spelling=True, objects=True,
                               remove_punc=False)
-    rappers.batch_size(25)
-    i = 0
-    existing_rappers = []
-    for rapper in tqdm(rappers):
-        if 'albums' in rapper:
-            existing_rappers.append(rapper['artist_id'])
-            continue
-        scrape_artist(rapper)
-        sys.stdout.flush()
-        if i == n - 1:
-            return
-        i += 1
-    print existing_rappers
+    print len([r for r in rappers])
+    # rappers.batch_size(25)
+    # i = 0
+    # existing_rappers = []
+    # for rapper in tqdm(rappers):
+        # if 'albums' in rapper:
+            # existing_rappers.append(rapper['artist_id'])
+            # continue
+        # scrape_artist(rapper)
+        # sys.stdout.flush()
+        # if i == n - 1:
+            # return
+        # i += 1
+    # print existing_rappers
 
 if __name__ == '__main__':
     global client
