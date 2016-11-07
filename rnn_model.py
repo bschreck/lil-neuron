@@ -41,17 +41,18 @@ import pdb,sys
 import lasagne
 import cPickle
 from extract_features import RapFeatureExtractor
+from generate_lyric_files import all_filenames
 
 np.random.seed(1234)
 
-BATCH_SIZE = 10#50                     # batch size
-MODEL_WORD_LEN = 10#50                 # how many words to unroll
+BATCH_SIZE = 50                     # batch size
+MODEL_WORD_LEN = 50                 # how many words to unroll
                                     # (some features may have multiple
                                     #  symbols per word)
 TOL = 1e-6                          # numerial stability
 INI = lasagne.init.Uniform(0.1)     # initial parameter values
-EMBEDDING_SIZE = 10#400                # Embedding size
-REC_NUM_UNITS = 20#400                 # number of LSTM units
+EMBEDDING_SIZE = 200                # Embedding size
+REC_NUM_UNITS = 200                 # number of LSTM units
 
 dropout_frac = 0.1                  # optional recurrent dropout
 lr = 2e-3                           # learning rate
@@ -119,15 +120,24 @@ def build_rnn(hid1_init_sym, hid2_init_sym, model_seq_len, word_vector_size):
     l_drp2 = lasagne.layers.DropoutLayer(l_rec2, p=dropout_frac)
     return [l_inp, l_emb, l_drp0, l_rec1, l_drp1, l_rec2, l_drp2]
 
-train_filenames = ['data/test_rap_with_nrp.txt']
-valid_filenames = ['data/test_rap_with_nrp.txt']
+def split_files(dirname, ratio=.8):
+    filenames = all_filenames(dirname)
+    train_indices = np.random.choice(np.arange(len(filenames)),
+                                     replace=False,
+                                     size=int(len(filenames)*ratio))
+    train_filenames = [f for i, f in enumerate(filenames) if i in train_indices]
+    valid_filenames = [f for i, f in enumerate(filenames) if i not in train_indices]
+    return train_filenames, valid_filenames
+train_filenames, valid_filenames = split_files("data/lyric_files/Tyler, The Creator")
+
 gzipped = False
 feature_extractor = RapFeatureExtractor(train_filenames = train_filenames,
                                         valid_filenames = valid_filenames,
                                         batch_size = BATCH_SIZE,
                                         model_word_len = MODEL_WORD_LEN,
                                         gzipped = gzipped)
-x_train, y_train, x_valid, y_valid = feature_extractor.extract()
+x_train, y_train, x_valid, y_valid, x_train_static, x_valid_static =\
+        feature_extractor.extract()
 
 # TODO: feature_extractor should save vocab_length, other stuff in pickle file
 vocab_size = feature_extractor.vocab_length
@@ -135,13 +145,13 @@ char2sym = feature_extractor.char2sym
 sym2char = feature_extractor.sym2char
 
 
-features = feature_extractor.feature_set
+seq_features = feature_extractor.sequence_feature_set
 final_layers = []
 rec_layers = []
 input_dict = {}
 inputs = {'x':[],'y':[sym_y], 'h':[]}
 total_model_len = 0
-for f in features:
+for f in seq_features:
     feature_vector_size = f.vector_dim
     total_model_len += REC_NUM_UNITS
 
@@ -158,6 +168,9 @@ for f in features:
 
     final_layers.append(l_drp2)
     rec_layers.extend([l_rec1, l_rec2])
+
+# TODO: include static features
+#static_features = feature_extractor.static_feature_set
 
 inputs = inputs['x'] + inputs['y'] + inputs['h']
 
@@ -251,7 +264,6 @@ f_train = theano.function(inputs,
                           [t for t in hidden_states_train],
                           updates=updates)
 
-
 def calc_perplexity(x, y):
     """
     Helper function to evaluate perplexity.
@@ -282,42 +294,3 @@ def calc_perplexity(x, y):
     perplexity = np.exp(np.sum(l_cost) / n_words_evaluated)
 
     return perplexity
-
-n_batches_train = x_train[0].shape[0] // BATCH_SIZE
-for epoch in range(num_epochs):
-    l_cost, l_norm, batch_time = [], [], time.time()
-
-    # use zero as initial state
-    hidden_states1 = [np.zeros((BATCH_SIZE, REC_NUM_UNITS),
-                           dtype='float32') for _ in range(len(x_train))]
-    hidden_states2 = [np.zeros((BATCH_SIZE, REC_NUM_UNITS),
-                           dtype='float32') for _ in range(len(x_train))]
-    for i in range(n_batches_train):
-        x_batch = [f[i*BATCH_SIZE:(i+1)*BATCH_SIZE] for f in x_train]
-        y_batch = y_train[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
-
-        _inputs = x_batch + [y_batch] + hidden_states1 + hidden_states2
-        output = f_train(*_inputs)
-        cost = output[0]
-        norm = output[1]
-        l_cost.append(cost)
-        l_norm.append(norm)
-    with open('model.pickle', 'wb') as f:
-        cPickle.dump(lasagne.layers.get_all_param_values(l_out), f,
-                     cPickle.HIGHEST_PROTOCOL)
-
-    if epoch > (no_decay_epochs - 1):
-        current_lr = sh_lr.get_value()
-        sh_lr.set_value(lasagne.utils.floatX(current_lr / float(decay)))
-
-    elapsed = time.time() - batch_time
-    words_per_second = float(BATCH_SIZE*(MODEL_WORD_LEN)*len(l_cost)) / elapsed
-    n_words_evaluated = (x_train[0].shape[0] - 1) / MODEL_WORD_LEN
-    perplexity_valid = calc_perplexity(x_valid, y_valid)
-    perplexity_train = np.exp(np.sum(l_cost) / n_words_evaluated)
-    print("Epoch           :", epoch)
-    print("Perplexity Train:", perplexity_train)
-    print("Perplexity valid:", perplexity_valid)
-    print("Words per second:", words_per_second)
-    l_cost = []
-    batch_time = 0

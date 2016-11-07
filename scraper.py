@@ -69,7 +69,7 @@ def form_url(path):
 def wait():
     do_wait = np.random.random() > .95
     if do_wait:
-        print "WAITING 1 MINUTE"
+        print "WAITING 1 MInue"
         sys.stdout.flush()
         # wait 1 minute
         time.sleep(60)
@@ -341,20 +341,23 @@ def find_no_wikia():
 def scrape_all_rappers(n=-1):
     rappers = get_all_rappers(wikia_spelling=True, objects=True,
                               remove_punc=False)
-    print len([r for r in rappers])
+    with open('missing_rappers.txt', 'r') as f:
+        missing = set([r.replace('\n','') for r in f.readlines()])
+    rappers = [r for r in rappers
+               if r['name'] in missing]
+    print len(rappers)
     # rappers.batch_size(25)
     # i = 0
     # existing_rappers = []
-    # for rapper in tqdm(rappers):
-        # if 'albums' in rapper:
-            # existing_rappers.append(rapper['artist_id'])
-            # continue
-        # scrape_artist(rapper)
-        # sys.stdout.flush()
-        # if i == n - 1:
-            # return
-        # i += 1
-    # print existing_rappers
+    for rapper in rappers:
+        if 'scraped' in rapper and rapper['scraped']:
+            continue
+        print "===== SCRAPING {}=====".format(rapper['name'])
+        scrape_artist(rapper)
+        db.artists.update_one({'artist_id': rapper['artist_id']},
+                {'$set': {'scraped': True}})
+        print "===== SCRAPED {}=====".format(rapper['name'])
+        sys.stdout.flush()
 
 if __name__ == '__main__':
     global client

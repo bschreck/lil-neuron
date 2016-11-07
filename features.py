@@ -6,6 +6,12 @@ class Feature(object):
         pass
 
 
+class RapVectorFeature(Feature):
+    def extract(self, *data):
+        self.vector_dim = data[0].shape[-1]
+        return data
+
+
 class PhonemeFeature(Feature):
     pass
 
