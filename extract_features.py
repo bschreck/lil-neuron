@@ -69,9 +69,9 @@ class RapFeatureExtractor(object):
         self.sym2word = sym2word
         self.char_vocab_length = char_vocab_length
         self.vocab_length = vocab_length
-        self.max_word_len = 0
-        self.max_prons_per_word = 0
-        self.max_phones_per_word = 0
+        self.max_word_len = 1
+        self.max_prons_per_word = 1
+        self.max_phones_per_word = 1
         self.max_nrps = max_rappers_per_verse
 
         inflect_engine = inflect.engine()
@@ -126,7 +126,7 @@ class RapFeatureExtractor(object):
                 rapper_vectors.append(rapper_vector)
             else:
                 rapper_vectors.append(np.zeros(self.len_rapper_vector))
-            rapper_syms.append(np.array(cur_sym))
+            rapper_syms.append(cur_sym)
         if len(rapper_vectors) > self.max_nrps:
             #self.max_nrps = len(rapper_vectors)
             rapper_syms = rapper_syms[:self.max_nrps]
@@ -218,6 +218,10 @@ class RapFeatureExtractor(object):
         new_rappers, rapper_vectors = self._nrp_line(line)
         if new_rappers is not None:
             word_feat = [self.special_symbols['<nrp>']] + new_rappers + [self.special_symbols['<eos>']]
+            if len(word_feat) > self.max_word_len:
+                self.max_word_len = len(word_feat)
+            if len(word_feat) > self.max_phones_per_word:
+                self.max_phones_per_word = len(word_feat)
             char_feat = [np.array(word_feat)]
             other_feats = [char_feat]
             return [word_feat, char_feat, other_feats, other_feats, rapper_vectors, False]
@@ -563,25 +567,28 @@ class RapFeatureExtractor(object):
                 for i, s in enumerate(phone_data):
                     for j, pron in enumerate(s):
                         vectors[i, j * phone_sz: j * phone_sz + len(pron)] = pron
-                verse[feat] = phone_data
+                verse[feat] = vectors
 
     def make_verse_instance(self, seq_features, labels, context_features):
-        # The object we return
-        ex = tf.train.SequenceExample()
-
+        # for n-dimensional stuff
+        # flatten and encode original dimensions as context
+        example = tf.train.SequenceExample()
         for key, vector in context_features.iteritems():
-            for value in vector:
-                ex.context.feature[key].int64_list.value.append(np.int64(value))
+            for v in vector.astype(np.int64):
+                example.context.feature[key].int64_list.value.append(v)
 
-        for featname, feature in seq_features.iteritems():
-            # TODO: figure out syntax
-            fl_tokens = ex.features.feature_list[featname]
-            for value in feature:
-                fl_tokens.feature.add().int64_list.value.append(np.int64(value))
-        fl_labels = ex.features.feature_list["labels"]
-        for value in labels:
-            fl_labels.feature.add().int64_list.value.append(np.int64(value))
-        return ex
+        for key, vector in seq_features.iteritems():
+            for v in vector.shape:
+                example.context.feature[key+".shape"].int64_list.value.append(v)
+            flat = vector.flatten().astype(np.int64)
+            feat = example.feature_lists.feature_list[key]
+            for v in flat:
+                feat.feature.add().int64_list.value.append(v)
+
+        labelfeat = example.feature_lists.feature_list['labels']
+        for v in labels:
+            labelfeat.feature.add().int64_list.value.append(v)
+        return example
 
     def save_tf_record_files(self, train_file="data/tf_train_data.txt",
                              valid_file="data/tf_valid_data.txt",
@@ -599,6 +606,36 @@ class RapFeatureExtractor(object):
 
         # don't use test file yet
 
+
+    def read_and_decode_single_example(self, filename="data/tf_train_data.txt"):
+
+        filename_queue = tf.train.string_input_producer([filename],
+                                                num_epochs=None)
+
+        reader = tf.TFRecordReader()
+        _, ex = reader.read(filename_queue)
+
+        context_features = {
+            "rapper0": tf.FixedLenFeature([self.len_rapper_vector], dtype=tf.int64),
+            "phones.shape": tf.FixedLenFeature([2], dtype=tf.int64),
+            "stresses.shape": tf.FixedLenFeature([2], dtype=tf.int64),
+            "chars.shape": tf.FixedLenFeature([2], dtype=tf.int64)
+        }
+
+        sequence_features = {
+            "phones": tf.FixedLenSequenceFeature([], dtype=tf.int64),
+            "stresses": tf.FixedLenSequenceFeature([], dtype=tf.int64),
+            "chars": tf.FixedLenSequenceFeature([], dtype=tf.int64),
+            "labels": tf.FixedLenSequenceFeature([], dtype=tf.int64)
+        }
+
+        context_parsed, sequence_parsed = tf.parse_single_sequence_example(
+            serialized=ex,
+            context_features=context_features,
+            sequence_features=sequence_features
+        )
+
+        return context_parsed, sequence_parsed
 
 
     def _split_phone_stress(self, phone_stress):
@@ -661,7 +698,7 @@ class RapFeatureExtractor(object):
             else:
                 all_subprons = norm_prons
             if i == 0:
-                full_prons = all_subprons
+                full_prons = self._remove_dups(all_subprons)
             elif len(all_subprons) > 0:
                 new_full_prons = []
                 for subpron in all_subprons:
@@ -670,9 +707,13 @@ class RapFeatureExtractor(object):
                             new_full_prons.append(pron + subpron)
                         except:
                             pdb.set_trace()
-                full_prons = new_full_prons
+                full_prons = self._remove_dups(new_full_prons)
 
         return full_prons
+
+    def _remove_dups(self, l):
+        return [s for i, s in enumerate(l)
+                if s in l[:i]]
 
     def _word_numbers(self, num):
         num = num.replace(',','')
@@ -694,11 +735,27 @@ if __name__ == '__main__':
     # with open('data/test_ints.txt', 'wb') as f:
         # f.write(test_rap)
 
-    extractor = RapFeatureExtractor(train_filenames=train_filenames,
-                                    valid_filenames=valid_filenames,
+    extractor = RapFeatureExtractor(train_filenames=train_filenames[0:1],
+                                    valid_filenames=valid_filenames[0:1],
                                     batch_size=50,
                                     model_word_len=50,
                                     gzipped=False)
-    extractor.save_tf_record_files()
-    #x_train, y_train, x_valid, y_valid, x_train_static, x_valid_static= extractor.extract()
-    # print x_train, y_train
+    #extractor.save_tf_record_files()
+    context_parsed, sequence_parsed = extractor.read_and_decode_single_example()
+    print context_parsed, sequence_parsed
+    #sequence = tf.contrib.learn.run_n([context_parsed, sequence_parsed], n=1, feed_dict=None)
+    sess = tf.Session()
+
+    # Required. See below for explanation
+    init = tf.initialize_all_variables()
+    sess.run(init)
+    tf.train.start_queue_runners(sess=sess)
+
+    # grab examples back.
+    # first example from file
+    context, sequence = sess.run([context_parsed, sequence_parsed])
+    phones_shape = context['phones.shape']
+    phones = sequence['phones']
+    reshaped = phones.reshape(phones_shape)
+    pdb.set_trace()
+    context2, sequence2 = sess.run([context_parsed, sequence_parsed])
