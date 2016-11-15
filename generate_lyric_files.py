@@ -106,26 +106,36 @@ def build_word_dict(filenames):
     word_to_dwordint = {}
     word_counts = defaultdict(int)
     slang_word_counts = defaultdict(int)
-    def add_word(orig, w, nondict=False):
+    def add_word(orig, wlist, nondict=[]):
         if orig not in word_to_dwordint:
-            if w in dword_to_int:
-                wint = dword_to_int[w]
-            else:
-                wint = len(dword_to_int)
-                dword_to_int[w] = wint
-                int_to_dword[wint] = w
-            word_to_dwordint[orig] = wint
-        wint = word_to_dwordint[orig]
-        word = int_to_dword[wint]
+            wintlist = []
+            for w in wlist:
+                if w in dword_to_int:
+                    wint = dword_to_int[w]
+                else:
+                    wint = len(dword_to_int)
+                    dword_to_int[w] = wint
+                    int_to_dword[wint] = w
+                wintlist.append(wint)
+            word_to_dwordint[orig] = wintlist
         if nondict:
-            slang_word_counts[word] += 1
+            slang_words = [wlist[i] for i in nondict]
+            dwords = [w for i, w in enumerate(wlist)
+                      if i not in nondict]
         else:
+            slang_words = []
+            dwords = wlist
+        for w in slang_words:
+            slang_word_counts[w] += 1
+        for w in dwords:
             word_counts[word] += 1
+
     for f in filenames:
         with open(f, 'r') as fo:
             words = fo.read()\
                     .replace("<eov>", " ")\
                     .replace("\n", " ")\
+                    .replace('\xe2\x80\x99',"'")\
                     .lower()\
                     .translate(replace_punctuation)\
                     .split()
@@ -134,20 +144,22 @@ def build_word_dict(filenames):
                 if numbers:
                     number = numbers[0][0]
                     nwords = _word_numbers(number)
-                    for nw in nwords:
-                        add_word(word, nw)
+                    add_word(word, nwords)
                 else:
                     cd_split = word.translate(commas_decimals).split()
-                    for w in cd_split:
+                    new_words = []
+                    nondict = []
+                    for i, w in enumerate(cd_split):
                         if english_d.check(w):
-                            add_word(word, w)
+                            new_words.append(w)
                         else:
                             suggested = english_d.suggest(w)
                             if len(suggested) and lev.distance(w, suggested[0]) == 1:
-                                add_word(word, suggested[0])
+                                new_words.append(suggested[0])
                             else:
-                                add_word(word, w, nondict=True)
-                    [add_word(word, w) for w in cd_split]
+                                new_words.append(w)
+                                nondict.append(i)
+                    add_word(word, new_words, nondict=nondict)
     end = time.time()
     print "elapsed:", end - begin
     return word_to_dwordint, dword_to_int, int_to_dword, word_counts, slang_word_counts
@@ -166,21 +178,40 @@ def word_count(filenames):
             counter.update(words)
     return counter
 
+def load_word_counts_into_db(collection, word_counts):
+    swc = [{"word": w, "count": i} for w,i in word_counts.iteritems()]
+    db[collection].insert_many(swc, ordered=False)
+def load_word_to_int_dicts_into_db(word_to_dwordint, dword_to_int, int_to_dword):
+    db.word_to_dwordint.insert_many([{"word": w, "int_list": wint}
+                                     for w, wint in word_to_dwordint.iteritems()],
+                                     ordered=False)
+    db.dword_to_int.insert_many([{"word": w, "int": wint}
+                                  for w, wint in dword_to_int.iteritems()],
+                                  ordered=False)
 
 if __name__ == '__main__':
+    # manually get prons for top 300 or so
+    # have flag for "is_acronym" that will jsut save whether it's an acronym
+    # for the feature_extractor
     global client
     global db
     client = MongoClient()
     db = client['lil-neuron-db']
     #generate_files("data/lyric_files")
-    filenames = all_filenames("data/lyric_files")
-    result = build_word_dict(filenames)
-    with open('word_stats.p','w') as f:
-        pck.dump({
-            'word_to_dwordint': result[0],
-            'dword_to_int': result[1],
-            'int_to_dword': result[2],
-            'word_counts': result[3],
-            'slang_word_counts': result[4],
-            }, f)
+    # filenames = all_filenames("data/lyric_files")
+    # result = build_word_dict(filenames)
+    with open('word_stats_new2.p','r') as f:
+        res = pck.load(f)
+        # pck.dump({
+            # 'word_to_dwordint': result[0],
+            # 'dword_to_int': result[1],
+            # 'int_to_dword': result[2],
+            # 'word_counts': result[3],
+            # 'slang_word_counts': result[4],
+            # }, f)
+    load_word_to_int_dicts_into_db(res['word_to_dwordint'],
+                                   res['dword_to_int'],
+                                   res['int_to_dword'])
+    # load_word_counts_into_db("slang_words", res["slang_word_counts"])
+    # load_word_counts_into_db("dwords", res["word_counts"])
     #filenames = all_filenames("data/lyric_files/Tyler, The Creator")

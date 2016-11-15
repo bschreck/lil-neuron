@@ -112,6 +112,8 @@ class RapFeatureExtractor(object):
             self.static_feature_set = [RapVectorFeature()]
 
     def _add_rappers(self, *rappers):
+        # TODO: also include context feature for pronunciation
+        # of rapper, and characters in the word
         rapper_syms = []
         rapper_vectors = []
         for rapper in rappers:
@@ -246,34 +248,49 @@ class RapFeatureExtractor(object):
         line_phones = []
         line_stresses = []
         for i, word in enumerate(words):
-            if word not in self.word2sym:
-                cur_word = self.vocab_length
-                self.word2sym[word] = cur_word
-                self.sym2word[cur_word] = word
-                self.vocab_length += 1
-            line_word_syms.append(self.word2sym[word])
-            word_symbols = np.zeros(len(word), dtype=np.int32)
-            word_phones, word_stresses = self._extract_phones(word)
-            if len(word) > self.max_word_len:
-                self.max_word_len = len(word)
-            for j, char in enumerate(word):
-                if char not in self.char2sym:
-                    cur_sym = self.char_vocab_length
-                    self.char2sym[char] = cur_sym
-                    self.sym2char[cur_sym] = char
-                    word_symbols[j] = cur_sym
-                    self.char_vocab_length += 1
-                else:
-                    word_symbols[j] = self.char2sym[char]
-            line_char_syms.append(word_symbols)
-            line_phones.append(word_phones)
-            line_stresses.append(word_stresses)
+            dictwords, syms = self._get_dict_words(word)
+            for i, dword in enumerate(dictwords):
+                cur_sym = syms[i]
+                # TODO: use precomputed syms, make sure to preinitialize vocab_length
+                # if dword not in self.word2sym:
+                    # cur_word = self.vocab_length
+                    # self.word2sym[dword] = cur_word
+                    # self.sym2word[cur_word] = dword
+                    # self.vocab_length += 1
+                line_word_syms.append(cur_sym)#self.word2sym[dword])
+                word_symbols = np.zeros(len(dword), dtype=np.int32)
+                word_phones, word_stresses = self._extract_phones(dword)
+                if len(dword) > self.max_word_len:
+                    self.max_word_len = len(dword)
+                for j, char in enumerate(dword):
+                    if char not in self.char2sym:
+                        cur_sym = self.char_vocab_length
+                        self.char2sym[char] = cur_sym
+                        self.sym2char[cur_sym] = char
+                        word_symbols[j] = cur_sym
+                        self.char_vocab_length += 1
+                    else:
+                        word_symbols[j] = self.char2sym[char]
+                line_char_syms.append(word_symbols)
+                line_phones.append(word_phones)
+                line_stresses.append(word_stresses)
 
         line_word_syms.append(self.special_symbols['<eos>'])
         line_char_syms.append(np.array([self.special_symbols['<eos>']]))
         line_phones.append([np.array([self.special_symbols['<eos>']])])
         line_stresses.append([np.array([self.special_symbols['<eos>']])])
         return line_word_syms, line_char_syms, line_phones, line_stresses, None, False
+
+    def _get_dict_words(self, word):
+        replace_punctuation = string.maketrans(string.punctuation, trans)
+        trans = word.lower().translate(replace_punctuation).split()
+        dwords = []
+        syms = []
+        for w in trans:
+            int_dwords = self.word_to_dwordint[w]
+            syms.extend(int_dwords)
+            [dwords.append(self.int_to_dword[i]) for i in int_dwords]
+        return dwords, syms
 
 
     # def _load_file(self, fname, valid=False):
@@ -320,6 +337,8 @@ class RapFeatureExtractor(object):
         verse_rap_vecs = None
         with open_func(fname, 'rb') as f:
             for line in f:
+                # remove \n
+                line = line[:-1]
                 word_symbols, char_symbols, phones, stresses, rap_vecs, eov = self._process_line_new(line)
 
                 verse_word_symbols.extend(word_symbols)
@@ -675,39 +694,42 @@ class RapFeatureExtractor(object):
         # if len(word) == 1:
             # pdb.set_trace()
         phones_ = pronouncing.phones_for_word
-        num = r'\d+(?:,\d+)?'
-        numbers = re.findall(num, word)
-        if numbers:
-            for num in numbers:
-                word = word.replace(num, ' {} '.format(self._word_numbers(num)))
-        punc_split = re.split('\W+', word)
+        # TODO: check on this
+        # numbers and punc formatting should already have happened
+
+        # num = r'\d+(?:,\d+)?'
+        # numbers = re.findall(num, word)
+        # if numbers:
+            # for num in numbers:
+                # word = word.replace(num, ' {} '.format(self._word_numbers(num)))
+        # punc_split = re.split('\W+', word)
         full_prons = []
-        for i, subword in enumerate(punc_split):
-            lowered = subword.lower()
-            norm_prons = [p.split() for p in phones_(lowered)]
-            if subword.isupper():
-                acro_pron = []
-                for c in lowered:
-                    if c == 'a':
-                        pron = phones_(c)[1]
-                        acro_pron.extend(pron.split())
-                    elif c:
-                        pron = phones_(c)[0]
-                        acro_pron.extend(pron.split())
-                all_subprons = [acro_pron] + norm_prons
-            else:
-                all_subprons = norm_prons
-            if i == 0:
-                full_prons = self._remove_dups(all_subprons)
-            elif len(all_subprons) > 0:
-                new_full_prons = []
-                for subpron in all_subprons:
-                    for pron in full_prons:
-                        try:
-                            new_full_prons.append(pron + subpron)
-                        except:
-                            pdb.set_trace()
-                full_prons = self._remove_dups(new_full_prons)
+        #for i, subword in enumerate(punc_split):
+        lowered = word.lower()
+        norm_prons = [p.split() for p in phones_(lowered)]
+        if word.isupper():
+            acro_pron = []
+            for c in lowered:
+                if c == 'a':
+                    pron = phones_(c)[1]
+                    acro_pron.extend(pron.split())
+                elif c:
+                    pron = phones_(c)[0]
+                    acro_pron.extend(pron.split())
+            all_subprons = [acro_pron] + norm_prons
+        else:
+            all_subprons = norm_prons
+        if i == 0:
+            full_prons = self._remove_dups(all_subprons)
+        elif len(all_subprons) > 0:
+            new_full_prons = []
+            for subpron in all_subprons:
+                for pron in full_prons:
+                    try:
+                        new_full_prons.append(pron + subpron)
+                    except:
+                        pdb.set_trace()
+            full_prons = self._remove_dups(new_full_prons)
 
         return full_prons
 
