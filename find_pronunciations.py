@@ -25,6 +25,7 @@ def valid_pron(pron):
     return True
 
 def find_pronunciations():
+    session_count = 0
     for word, count in SLANG_WORD_COUNTS:
         inp = None
         pron = None
@@ -41,7 +42,7 @@ def find_pronunciations():
                 for w in words:
                     while True:
                         existing_slang = db.slang_words.find({'word':w}).limit(1)
-                        existing_slang = [s['pronunciation'] for s in existing_slang]
+                        existing_slang = [s['pronunciation'] for s in existing_slang if 'pronunciation' in s]
                         if len(existing_slang):
                             prons = [' '.join(existing_slang[0])]
                         elif w in PARTIAL_WORDS:
@@ -94,6 +95,8 @@ def find_pronunciations():
             if pron:
                 print pron
                 print "updating"
+                session_count += 1
+                print "SESSION COUNT: {}".format(session_count)
                 db.slang_words.update({'word': word}, {'$set':{'pronunciation':pron}})
 
 
