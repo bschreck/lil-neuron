@@ -1,4 +1,7 @@
 import tensorflow as tf
+# TODO: bidirectional RNN's for individual words
+
+
 # Use dynamic_rnn()
 # dynamically pad batches using tf.train.batch
 # dynamic_rnn allows for a changing batch_size, so my batch_size can be the length of the verse

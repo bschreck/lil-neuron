@@ -31,7 +31,10 @@ def find_pronunciations():
         pron = None
         while inp not in ['c', 'm']:
             print "SLANG WORD:"
-            print "==> {} (count = {})".format(word, count)
+            try:
+                print "==> {} (count = {})".format(word, count)
+            except UnicodeEncodeError:
+                break
             print "Combine words (c) or manual (m):"
 
             inp = raw_input("==> ")
