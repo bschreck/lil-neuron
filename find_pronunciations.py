@@ -102,6 +102,24 @@ def find_pronunciations():
                 print "SESSION COUNT: {}".format(session_count)
                 db.slang_words.update({'word': word}, {'$set':{'pronunciation':pron}})
 
+def update_slang_ints():
+    last_dwordint = sorted(INT_TO_DWORD.iterkeys(), reverse=True)[0]
+    start = last_dwordint + 1
+    records = db.slang_words.find()
+    for i, r in enumerate(records):
+        word = r['word']
+        sym = i + start
+        db.slang_words.update_one({'word': word}, {'$set': {'sym': sym}})
+    # last_dwordint = sorted(INT_TO_DWORD.iterkeys(), reverse=True)[0]
+    # start = last_dwordint + 1
+    # for i, r in enumerate(db.slang_words.find()):
+        # sym = i + start
+        # db.slang_words.update({'word': r['word']}, {'sym': sym})
+
+def update_dword_prons():
+    for sym, word in INT_TO_DWORD.iteritems():
+        prons = pronouncing.phones_for_word(word)
+        db.dword_to_int.update_one({'sym': sym}, {'$set': {'prons': prons}})
 
 def load_dicts():
     global client
@@ -109,10 +127,16 @@ def load_dicts():
     client = MongoClient()
     db = client['lil-neuron-db']
 
-    records = db.slang_words.find({"pronunciation": {'$exists': False}})
-    global SLANG_WORD_COUNTS
-    SLANG_WORD_COUNTS = sorted([(r["word"], r["count"]) for r in records],
-                               key=lambda x: -x[1])
+    # records = db.slang_words.find()
+    # word_ints = sorted([(r["word"], r["sym"]) for r in records],
+                               # key=lambda x: -x[1])
+    # print word_ints[:5]
+    # print word_ints[-5:]
+    # return
+    # records = db.slang_words_new.find({"pronunciation": {'$exists': False}})
+    # global SLANG_WORD_COUNTS
+    # SLANG_WORD_COUNTS = sorted([(r["word"], r["count"]) for r in records],
+                               # key=lambda x: -x[1])
 
     # records = db.partial_words.find()
     global PARTIAL_WORDS
@@ -140,4 +164,5 @@ def load_dicts():
         INT_TO_DWORD[r["int"]] = r["word"]
 if __name__ == '__main__':
     load_dicts()
-    find_pronunciations()
+    #update_slang_ints()
+    update_dword_prons()

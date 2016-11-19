@@ -83,16 +83,22 @@ class RNNPath(object):
 
 
         with tf.device(device):
-            inputs = rf.rnn_cell._linear(input_.input_data,
-                                         size,
-                                         False)
+            _, states = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, input_.input_data, sequence_length=None,
+                                     initial_state_fw=None, initial_state_bw=None,
+                                     dtype=None, parallel_iterations=None,
+                                     swap_memory=False, time_major=False, scope=None)
+            fw_state, bw_state = states
+            both_states = tf.concat([fw_state, bw_state])
+            # inputs = rf.rnn_cell._linear(input_.input_data,
+                                         # size,
+                                         # False)
         if is_training and config.keep_prob < 1:
-            inputs = tf.nn.dropout(inputs, config.keep_prob)
+            both_states = tf.nn.dropout(both_states, config.keep_prob)
 
         outputs, last_states = tf.nn.dynamic_rnn(cell=cell,
                                                  dtype=data_type(),
                                                  sequence_length=X_lengths,
-                                                 inputs=inputs)
+                                                 inputs=both_states)
         self._final_state = last_states[-1]
         self._outputs = outputs
     @property
