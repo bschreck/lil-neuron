@@ -1,5 +1,7 @@
-from pymongo import MongoClient
-import pronouncing
+#from pymongo import MongoClient
+#import pronouncing
+import math
+import multiprocessing as mp
 import pdb
 all_phones = set(["AA", "AE", "AH", "AO", "AW", "AY", "B", "CH", "D", "DH",
                   "EH", "ER", "EY", "F", "G", "HH", "IH", "IY", "JH", "K",
@@ -116,16 +118,31 @@ def update_slang_ints():
         # sym = i + start
         # db.slang_words.update({'word': r['word']}, {'sym': sym})
 
-def update_dword_prons():
-    for sym, word in INT_TO_DWORD.iteritems():
-        prons = pronouncing.phones_for_word(word)
-        db.dword_to_int.update_one({'sym': sym}, {'$set': {'prons': prons}})
-
-def load_dicts():
-    global client
-    global db
+def _update_dword_prons(tuples):
+    from pymongo import MongoClient
+    import pronouncing
     client = MongoClient()
     db = client['lil-neuron-db']
+    for sym, word, in tuples:
+        prons = pronouncing.phones_for_word(word.lower())
+        db.dword_to_int.update_one({'int': sym}, {'$set': {'prons': prons}})
+
+def update_dword_prons(int_to_dword):
+    groupsize = 1000
+    ncores = mp.cpu_count()
+    pool = mp.Pool(ncores)
+    groups = []
+    for i, t in enumerate(int_to_dword.iteritems()):
+        if i % groupsize == 0:
+            groups.append([])
+        groups[-1].append(t)
+    pool.map(_update_dword_prons, groups)
+
+def load_dicts():
+    # global client
+    # global db
+    # client = MongoClient()
+    # db = client['lil-neuron-db']
 
     # records = db.slang_words.find()
     # word_ints = sorted([(r["word"], r["sym"]) for r in records],
@@ -139,9 +156,9 @@ def load_dicts():
                                # key=lambda x: -x[1])
 
     # records = db.partial_words.find()
-    global PARTIAL_WORDS
-    # PARTIAL_WORDS = {r['word']: r['pronunciation'] for r in records}
-    PARTIAL_WORDS = {}
+    # global PARTIAL_WORDS
+    # # PARTIAL_WORDS = {r['word']: r['pronunciation'] for r in records}
+    # PARTIAL_WORDS = {}
 
     records = db.dwords.find()
     global WORD_COUNTS
@@ -149,11 +166,11 @@ def load_dicts():
                          key=lambda x: -x[1])
 
 
-    global WORD_TO_DWORD_INT
-    WORD_TO_DWORD_INT = {}
-    records = db.word_to_dwordint.find()
-    for r in records:
-        WORD_TO_DWORD_INT[r["word"]] = r["int_list"]
+    # global WORD_TO_DWORD_INT
+    # WORD_TO_DWORD_INT = {}
+    # records = db.word_to_dwordint.find()
+    # for r in records:
+        # WORD_TO_DWORD_INT[r["word"]] = r["int_list"]
 
     global DWORD_TO_INT
     global INT_TO_DWORD
@@ -163,6 +180,17 @@ def load_dicts():
     for r in records:
         INT_TO_DWORD[r["int"]] = r["word"]
 if __name__ == '__main__':
-    load_dicts()
+    # load_dicts()
     #update_slang_ints()
-    update_dword_prons()
+
+    # global DWORD_TO_INT
+    # global INT_TO_DWORD
+    #DWORD_TO_INT = {}
+    from pymongo import MongoClient
+    client = MongoClient()
+    db = client['lil-neuron-db']
+    INT_TO_DWORD = {}
+    records = db.dword_to_int.find()
+    for r in records:
+        INT_TO_DWORD[r["int"]] = r["word"]
+    update_dword_prons(INT_TO_DWORD)

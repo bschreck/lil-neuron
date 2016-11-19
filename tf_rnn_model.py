@@ -31,21 +31,16 @@ def data_type():
   return tf.float16 if FLAGS.use_fp16 else tf.float32
 
 
-class PTBInput(object):
+class LNInput(object):
     """The input data."""
 
-    def __init__(self, config, data, dynamic_batch_size=True, name=None):
+    def __init__(self, extractor, config, name=None):
+        self.extractor = extractor
         self.batch_size = None
-        if not dynamic_batch_size:
-            self.batch_size = config.batch_size
-            self.input_data, self.targets, self.sequence_lengths = \
-                reader.extract(data, batch_size, name=name)
-            self.epoch_size = self.find_ep
-        else:
-            self.batch_size = config.batch_size
-            self.epoch_size = ((len(data) // self.batch_size) - 1) // num_steps
-            self.input_data, self.targets, self.sequence_lengths, self.dynamic_batch_size = \
-                reader.extract(data, batch_size = None, name=name)
+        self.batch_size = config.batch_size
+        self.filename = config.filename
+        self.input_data = \
+            reader.batched_data_producer(self.extractor, self.batch_size, self.filename, name=name)
     @property
     def epoch_size(self):
         pass
@@ -58,12 +53,13 @@ class RNNPath(object):
         self.device = device
         self._input = input_
         batch_size = input_.batch_size
-        X_lengths = input_.sequence_lengths
+        word_lengths = input_.word_lengths
+        verse_lengths = input_.verse_lengths
         size = config.hidden_size
         vocab_size = config.vocab_size
 
         # Can experiment with different settings
-        lstm_cell = tf.nn.rnn_cell.LSTMCell(size,
+        lstm_cell = tf.nn.rnn_cell.LSTMCell(2*size,
                use_peepholes=False,
                cell_clip=None,
                initializer=None,
@@ -76,19 +72,34 @@ class RNNPath(object):
         if is_training and config.keep_prob < 1:
             lstm_cell = tf.nn.rnn_cell.DropoutWrapper(
                   lstm_cell, output_keep_prob=config.keep_prob)
-        cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * config.num_layers,
+        word_level_cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * config.num_word_layers,
+                                           state_is_tuple=True)
+        char_level_cell_fw = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * config.num_char_layers,
+                                           state_is_tuple=True)
+        char_level_cell_bw = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * config.num_char_layers,
                                            state_is_tuple=True)
 
         self._initial_state = cell.zero_state(batch_size, data_type())
 
 
         with tf.device(device):
-            _, states = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, input_.input_data, sequence_length=None,
-                                     initial_state_fw=None, initial_state_bw=None,
-                                     dtype=None, parallel_iterations=None,
-                                     swap_memory=False, time_major=False, scope=None)
+            word_len = input_.word_len
+            batch_size = input_.batch_size
+            verse_len = input_.verse_len
+            input_data_concat = tf.reshape(input_.input_data, (batch_size * verse_len, word_len))
+            # might need to add a last dimension on with expand_dims
+            _, states = tf.nn.bidirectional_dynamic_rnn(char_level_cell_fw,
+                                                        char_level_cell_bw,
+                                                        input_data_concat,
+                                                        sequence_length=word_lengths,
+                                                        dtype=data_type(),
+                                                        swap_memory=True,
+                                                        time_major=False,
+                                                        scope=None)
             fw_state, bw_state = states
-            both_states = tf.concat([fw_state, bw_state])
+            both_states = tf.concat(-1, [fw_state, bw_state])
+            both_states_expanded = tf.reshape(both_states, (batch_size, verse_len, -1))
+
             # inputs = rf.rnn_cell._linear(input_.input_data,
                                          # size,
                                          # False)
@@ -97,8 +108,8 @@ class RNNPath(object):
 
         outputs, last_states = tf.nn.dynamic_rnn(cell=cell,
                                                  dtype=data_type(),
-                                                 sequence_length=X_lengths,
-                                                 inputs=both_states)
+                                                 sequence_length=verse_lengths,
+                                                 inputs=both_states_expanded)
         self._final_state = last_states[-1]
         self._outputs = outputs
     @property

@@ -22,6 +22,8 @@ import inflect
 import re
 import time
 import string
+from pymongo import MongoClient
+client = MongoClient()
 
 # TODO: just use first pronunciation for words
 # TODO: see if there's an easy way to load in unstandardized vectors from verse SequenceExamples, and have tensor flow do batching
@@ -38,8 +40,6 @@ class RapFeatureExtractor(object):
     def __init__(self,
                  train_filenames=None,
                  valid_filenames=None,
-                 batch_size=3,
-                 model_word_len=3,
                  max_rappers_per_verse=3,
                  word2sym={},
                  sym2word={},
@@ -52,19 +52,15 @@ class RapFeatureExtractor(object):
                  gzipped=True,
                  pickle_file=None,
                  rapper_vector_file='rapper_matrix.p'):
+        self.db = client['lil-neuron-db']
         self.train_filenames = train_filenames
         self.valid_filenames = valid_filenames
-        self.pck_data_file = pickle_file
-        if self.pck_data_file is None:
-            self.pck_data_file = os.path.join("data", "formatted_data.p")
+        #self.pck_data_file = pickle_file
+        # if self.pck_data_file is None:
+            # self.pck_data_file = os.path.join("data", "formatted_data.p")
         self.gzipped = gzipped
 
-        self.batch_size = batch_size
-        self.model_word_len = model_word_len
-        self.rapper_vectors = pickle.load(open(rapper_vector_file))
-        for key, vec in self.rapper_vectors.iteritems():
-            self.rapper_vectors[key] = vec.astype(np.int32)
-        self.len_rapper_vector = self.rapper_vectors.values()[0].shape[0]
+        self.rapper_vectors = self._load_rap_vecs()
         self.char2sym = char2sym
         self.sym2char = sym2char
         self.word2sym = word2sym
@@ -76,17 +72,19 @@ class RapFeatureExtractor(object):
         self.max_phones_per_word = 1
         self.max_nrps = max_rappers_per_verse
 
-        inflect_engine = inflect.engine()
-        self.inflect_num_to_words = inflect_engine.number_to_words
+        self._load_word_dictionaries()
+
+        # inflect_engine = inflect.engine()
+        # self.inflect_num_to_words = inflect_engine.number_to_words
 
         self.special_symbols = {
         }
         special_symbols = ['<eos>', '<eov>', '<nrp>']
         for s in special_symbols:
+            self.vocab_length += 1
             self.word2sym[s] = self.vocab_length
             self.sym2word[self.vocab_length] = s
             self.special_symbols[s] = self.vocab_length
-            self.vocab_length += 1
 
         self.rapper2sym = {}
         self.sym2rapper = {}
@@ -102,16 +100,24 @@ class RapFeatureExtractor(object):
         self.valid_stress_syms = []
         self.valid_rap_vecs = []
 
-        if sequence_feature_set:
-            self.sequence_feature_set = sequence_feature_set
-        else:
-            self.sequence_feature_set = [RawWordsAsChars(),
-                                         RawStresses(),
-                                         RawPhonemes()]
-        if static_feature_set:
-            self.static_feature_set = static_feature_set
-        else:
-            self.static_feature_set = [RapVectorFeature()]
+        # if sequence_feature_set:
+            # self.sequence_feature_set = sequence_feature_set
+        # else:
+            # self.sequence_feature_set = [RawWordsAsChars(),
+                                         # RawStresses(),
+                                         # RawPhonemes()]
+        # if static_feature_set:
+            # self.static_feature_set = static_feature_set
+        # else:
+            # self.static_feature_set = [RapVectorFeature()]
+
+    def _load_rap_vecs(self):
+        records = self.db.artists.find({'vector':{'$exists':True}}, {'vector':True, 'name':True})
+        rap_vecs = {}
+        for r in records:
+            rap_vecs[r['name']] = np.array(r['vector'])
+        self.len_rapper_vector = len(r['vector'])
+        return rap_vecs
 
     def _load_word_dictionaries(self):
         self.word_to_intlist = {}
@@ -121,11 +127,15 @@ class RapFeatureExtractor(object):
         records = self.db.word_to_dwordint.find()
         for r in records:
             self.word_to_intlist[r['word']] = r['int_list']
+
         records = self.db.dword_to_int.find()
         for r in records:
             self.word_to_int[r['word']] = r['int']
             self.int_to_word[r['int']] = r['word']
-            self.word_int_to_pron[r['int']] = r['prons'][0]
+            if len(r['prons']):
+                self.word_int_to_pron[r['int']] = r['prons'][0].split()
+            else:
+                self.word_int_to_pron[r['int']] = []
 
         records = self.db.slang_words.find()
         for r in records:
@@ -134,6 +144,9 @@ class RapFeatureExtractor(object):
             self.int_to_word[r['sym']] = r['word']
             if 'pronunciation' in r:
                 self.word_int_to_pron[r['sym']] = r['pronunciation']
+            else:
+                self.word_int_to_pron[r['sym']] = []
+        self.unknown_prons = set(self.int_to_word[w] for w,p in self.word_int_to_pron.iteritems() if p == '')
 
     def _add_rappers(self, *rappers):
         # TODO: also include context feature for pronunciation
@@ -214,7 +227,7 @@ class RapFeatureExtractor(object):
                 cur_sym = syms[i]
                 line_word_syms.append(cur_sym)
                 word_symbols = np.zeros(len(dword), dtype=np.int32)
-                word_phones, word_stresses = self._extract_phones(cursym)
+                word_phones, word_stresses = self._extract_phones(cur_sym)
 
                 for j, char in enumerate(dword):
                     if char not in self.char2sym:
@@ -244,15 +257,18 @@ class RapFeatureExtractor(object):
         trans = ''.join(trans)
         replace_punctuation = string.maketrans(string.punctuation, trans)
 
-        trans = word.replace('\xe2\x80\x99',"'")\
-                   .translate(replace_punctuation)\
-                   .split().lower()
+        translation = word.replace('\xe2\x80\x99',"'")\
+                      .translate(replace_punctuation)\
+                      .lower()\
+                      .split()
         dwords = []
         syms = []
-        for w in trans:
-            int_dwords = self.word_to_int[w]
+        for w in translation:
+            int_dwords = self.word_to_intlist[w]
+            if not isinstance(int_dwords, list):
+                int_dwords = [int_dwords]
             syms.extend(int_dwords)
-            [dwords.append(self.int_to_dword[i]) for i in int_dwords]
+            [dwords.append(self.int_to_word[i]) for i in int_dwords]
         return dwords, syms
 
     def _load_file_verses(self, fname, valid=False):
@@ -275,7 +291,7 @@ class RapFeatureExtractor(object):
                 verse_word_symbols.extend(word_symbols)
                 verse_char_symbols.extend(char_symbols)
                 verse_phones.extend(phones)
-                verse_stresses.extend(phones)
+                verse_stresses.extend(stresses)
                 if original_rap_vecs is None:
                     original_rap_vecs = rap_vecs
                 if verse_rap_vecs is None and rap_vecs:
@@ -353,20 +369,23 @@ class RapFeatureExtractor(object):
                 example.context.feature[key].int64_list.value.append(v)
 
         for key, word_vectors in seq_features.iteritems():
-            longest = max([len(v) for v in word_vectors])
+            word_vector_lengths =[len(v) for v in word_vectors]
+            longest = max(word_vector_lengths)
             shape = (len(word_vectors), longest)
             for v in shape:
                 example.context.feature[key+".shape"].int64_list.value.append(v)
             feat = example.feature_lists.feature_list[key]
+            length_feat = example.feature_lists.feature_list[key+".lengths"]
             for i, v in enumerate(word_vectors):
+                length_feat.feature.add().int64_list.value.append(word_vector_lengths[i])
                 for value in v:
-                    feat.feature.add().int64_list.value.append(v)
+                    feat.feature.add().int64_list.value.append(int(value))
                 for value in xrange(len(v), longest):
                     feat.feature.add().int64_list.value.append(0)
 
         labelfeat = example.feature_lists.feature_list['labels']
         for v in labels:
-            labelfeat.feature.add().int64_list.value.append(v)
+            labelfeat.feature.add().int64_list.value.append(int(v))
         return example
 
     def save_tf_record_files(self, train_file="data/tf_train_data.txt",
@@ -394,6 +413,7 @@ class RapFeatureExtractor(object):
         reader = tf.TFRecordReader()
         _, ex = reader.read(filename_queue)
 
+        # TODO: other rappers
         context_features = {
             "rapper0": tf.FixedLenFeature([self.len_rapper_vector], dtype=tf.int64),
             "phones.shape": tf.FixedLenFeature([2], dtype=tf.int64),
@@ -405,7 +425,11 @@ class RapFeatureExtractor(object):
             "phones": tf.FixedLenSequenceFeature([], dtype=tf.int64),
             "stresses": tf.FixedLenSequenceFeature([], dtype=tf.int64),
             "chars": tf.FixedLenSequenceFeature([], dtype=tf.int64),
-            "labels": tf.FixedLenSequenceFeature([], dtype=tf.int64)
+            "labels": tf.FixedLenSequenceFeature([], dtype=tf.int64),
+
+            "phones.lengths": tf.FixedLenSequenceFeature([], dtype=tf.int64),
+            "stresses.lengths": tf.FixedLenSequenceFeature([], dtype=tf.int64),
+            "chars.lengths": tf.FixedLenSequenceFeature([], dtype=tf.int64)
         }
 
         context_parsed, sequence_parsed = tf.parse_single_sequence_example(
@@ -421,14 +445,14 @@ class RapFeatureExtractor(object):
         try:
             stress = int(phone_stress[-1])
         except:
-            return phone_stress, 0
+            return phone_stress, 1
         else:
-            return phone_stress[:-1], stress
+            if stress > 2:
+                pdb.set_trace()
+            return phone_stress[:-1], stress + 1
 
     def _extract_phones(self, wordint):
         phone_stresses = self._find_prons(wordint)
-        phone_pronunciations = []
-        stress_pronunciations = []
 
         word_phones = np.zeros(len(phone_stresses))
         word_stresses = np.zeros(len(phone_stresses))
@@ -513,27 +537,30 @@ if __name__ == '__main__':
     # with open('data/test_ints.txt', 'wb') as f:
         # f.write(test_rap)
 
-    extractor = RapFeatureExtractor(train_filenames=train_filenames[0:1],
-                                    valid_filenames=valid_filenames[0:1],
-                                    batch_size=50,
-                                    model_word_len=50,
+    extractor = RapFeatureExtractor(train_filenames=train_filenames,
+                                    valid_filenames=valid_filenames,
                                     gzipped=False)
-    #extractor.save_tf_record_files()
+    extractor.save_tf_record_files()
     context_parsed, sequence_parsed = extractor.read_and_decode_single_example()
-    print context_parsed, sequence_parsed
-    #sequence = tf.contrib.learn.run_n([context_parsed, sequence_parsed], n=1, feed_dict=None)
+    # print context_parsed, sequence_parsed
+    # #sequence = tf.contrib.learn.run_n([context_parsed, sequence_parsed], n=1, feed_dict=None)
     sess = tf.Session()
 
-    # Required. See below for explanation
+    # # Required. See below for explanation
     init = tf.initialize_all_variables()
     sess.run(init)
     tf.train.start_queue_runners(sess=sess)
 
-    # grab examples back.
-    # first example from file
+    # # grab examples back.
+    # # first example from file
     context, sequence = sess.run([context_parsed, sequence_parsed])
     phones_shape = context['phones.shape']
     phones = sequence['phones']
     reshaped = phones.reshape(phones_shape)
+
+    stresses_shape = context['stresses.shape']
+    stresses = sequence['stresses']
+    stresses_reshaped = stresses.reshape(stresses_shape)
+
     pdb.set_trace()
-    context2, sequence2 = sess.run([context_parsed, sequence_parsed])
+    # # context2, sequence2 = sess.run([context_parsed, sequence_parsed])

@@ -4,7 +4,48 @@ import tensorflow as tf
 # where first dimension is features,
 # second dimension is words
 # third dimension is characters or phonemes
-def batched_data_producer(raw_data_features, batch_size, num_steps, name=None):
+def batched_data_producer(extractor, batch_size, filename, num_steps, name=None):
+    # TODO: num_steps?
+    #  see if the reshape stuff works here before running
+    context, sequence= extractor.read_and_decode_single_example(filename)
+    rapper0 = context['rapper0']
+
+    labels = sequence['labels']
+
+    phones_lengths = sequence['phones.lengths']
+    phones_shape = context['phones.shape']
+    phones = sequence['phones']
+    reshaped_phones = tf.reshape(phones, phones_shape)
+
+    chars_lengths = sequence['chars.lengths']
+    chars_shape = context['chars.shape']
+    chars = context['chars']
+    reshaped_chars = tf.reshape(chars, chars_shape)
+
+    stresses_lengths = sequence['stresses.lengths']
+    stresses_shape = context['stresses.shape']
+    stresses = context['stresses']
+    reshaped_stresses = tf.reshape(stresses, stresses_shape)
+    batched_data = tf.train.batch(
+        tensors=[rapper0, labels,
+                 reshaped_chars, chars_lengths,
+                 reshaped_phones, phones_lengths,
+                 reshaped_stresses, stresses_lengths],
+        batch_size=batch_size,
+        dynamic_pad=True,
+        name="y_batch"
+    )
+    return {
+            'rapper0': batched_data[0],
+            'labels': batched_data[1],
+            'chars': batched_data[2],
+            'chars_length': batched_data[3],
+            'phones': batched_data[4],
+            'phones_lengths': batched_data[5],
+            'stresses': batched_data[6],
+            'stresses_lengths': batched_data[7]
+    }
+
     tensor_batched_x = []
     tensor_batched_y = []
     for i, raw_data_feature in enumerate(raw_data_features):
@@ -60,3 +101,4 @@ def batched_data_producer(raw_data_features, batch_size, num_steps, name=None):
             # tensor_batched_x.append(batched_data_x)
             # tensor_batched_y.append(batched_data_y)
     return tensor_batched_x, tensor_batched_y
+

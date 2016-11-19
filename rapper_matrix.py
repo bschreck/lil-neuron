@@ -37,9 +37,16 @@ def build_rapper_matrix(pfile='rapper_matrix.p'):
     pck.dump(rapper_matrix, open(pfile, 'wb'))
     return rapper_matrix
 
+def import_rap_vecs_to_mongo(pfile='rapper_matrix.p'):
+    client = MongoClient()
+    db = client["lil-neuron-db"]
+    rapper_vectors = pck.load(open(pfile, 'rb'))
+    for key, vec in rapper_vectors.iteritems():
+        db.artists.update_one({'name': key}, {'$set': {'vector': list(vec)}})
 
 if __name__ == '__main__':
-    rapper_matrix = build_rapper_matrix()
-    first = rapper_matrix.keys()[0]
-    print first
-    print rapper_matrix[first]
+    import_rap_vecs_to_mongo()
+    # rapper_matrix = build_rapper_matrix()
+    # first = rapper_matrix.keys()[0]
+    # print first
+    # print rapper_matrix[first]
