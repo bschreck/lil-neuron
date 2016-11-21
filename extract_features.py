@@ -401,10 +401,13 @@ class RapFeatureExtractor(object):
         verse_length = len(seq_features.values()[0])
         example.context.feature['verse_length'].int64_list.value.append(verse_length)
 
+        # max_word_lengths = []
         for key, word_vectors in seq_features.iteritems():
             assert len(word_vectors) == verse_length
             word_vector_lengths =[len(v) for v in word_vectors]
+
             longest = max(word_vector_lengths)
+            # word_lengths.append(longest)
             shape = (len(word_vectors), longest)
             for v in shape:
                 example.context.feature[key+".shape"].int64_list.value.append(v)
@@ -417,8 +420,8 @@ class RapFeatureExtractor(object):
                 for value in xrange(len(v), longest):
                     feat.feature.add().int64_list.value.append(0)
 
-        word_length = longest
-        example.context.feature['word_length'].int64_list.value.append(word_length)
+        # for word_length in max_word_lengths:
+            # example.context.feature['word_lengths'].int64_list.value.append(word_length)
 
         labelfeat = example.feature_lists.feature_list['labels']
         for v in labels:

@@ -65,12 +65,10 @@ class LNInput(object):
 
 
 class RNNInput(object):
-    def __init__(self, feature, word_lengths, sequence_lengths, verse_length, word_length):
+    def __init__(self, feature, word_lengths, verse_lengths):
         self.feature = feature
         self.word_lengths = word_lengths
-        self.sequence_lengths = sequence_lengths
-        self.verse_length = verse_length
-        self.word_length = word_length
+        self.verse_lengths = verse_lengths
 
 class RNNPath(object):
     def __init__(self, is_training, config, input_, device="/cpu:0"):
@@ -80,7 +78,7 @@ class RNNPath(object):
         batch_size = config.batch_size
         char_vocab_size= config.char_vocab_size
         word_lengths = input_.word_lengths
-        verse_lengths = input_.sequence_lengths
+        verse_lengths = input_.verse_lengths
         feature_shape = tf.shape(feature)
         batch_verse_len = feature_shape[1]
 
@@ -130,7 +128,7 @@ class RNNPath(object):
 
             word_lengths = tf.reshape(word_lengths, tf.pack([batch_size * batch_verse_len]))
 
-            _, states = tf.nn.bidirectional_dynamic_rnn(char_level_cell_fw,
+            _, bistates = tf.nn.bidirectional_dynamic_rnn(char_level_cell_fw,
                                                         char_level_cell_bw,
                                                         embed_inputs,
                                                         sequence_length=word_lengths,
@@ -138,7 +136,7 @@ class RNNPath(object):
                                                         swap_memory=True,
                                                         time_major=False,
                                                         scope=None)
-            fw_states, bw_states = states
+            fw_states, bw_states = bistates
             fw_state = [_s for fw_state in fw_states for _s in [fw_state.c, fw_state.h]]
             bw_state = [_s for bw_state in bw_states for _s in [bw_state.c, bw_state.h]]
             full_state = fw_state + bw_state
@@ -149,16 +147,16 @@ class RNNPath(object):
             new_shape = tf.pack([batch_size, batch_verse_len, full_size])
             both_states_expanded = tf.reshape(both_states, new_shape)
 
-        if is_training and config.keep_prob < 1:
-            both_states_expanded = tf.nn.dropout(both_states_expanded, config.keep_prob)
+            if is_training and config.keep_prob < 1:
+                both_states_expanded = tf.nn.dropout(both_states_expanded, config.keep_prob)
 
-        verse_lengths = tf.reshape(verse_lengths, [-1])
-        outputs, last_states = tf.nn.dynamic_rnn(cell=word_level_cell,
-                                                 dtype=data_type(),
-                                                 sequence_length=verse_lengths,
-                                                 inputs=both_states_expanded)
-        self._final_state = last_states[-1]
-        self._outputs = outputs
+            verse_lengths = tf.reshape(verse_lengths, [-1])
+            outputs, last_states = tf.nn.dynamic_rnn(cell=word_level_cell,
+                                                     dtype=data_type(),
+                                                     sequence_length=verse_lengths,
+                                                     inputs=both_states_expanded)
+            self._final_states = last_states + bistates
+            self._outputs = outputs
 
     @property
     def input(self):
@@ -169,8 +167,8 @@ class RNNPath(object):
         return self._initial_states
 
     @property
-    def final_state(self):
-        return self._final_state
+    def final_states(self):
+        return self._final_states
 
     @property
     def outputs(self):
@@ -184,8 +182,6 @@ class ConcatLearn(object):
     def __init__(self, is_training, config, labels, rnn_paths, verse_lengths, feed_forward_path, device="/cpu:0"):
         self.rnn_paths = rnn_paths
         self.feed_forward_path = feed_forward_path
-
-        self._final_state = [m.final_state for m in self.rnn_paths]
 
         verse_len = tf.shape(self.rnn_paths[0].outputs)[1]
         # separate batch dimension into lists
@@ -266,10 +262,10 @@ class ConcatLearn(object):
 
     @property
     def initial_state(self):
-        return [s for path in self.rnn_paths for s in path._initial_states]
+        return [s for path in self.rnn_paths for s in path.initial_states]
     @property
     def final_state(self):
-        return self._final_state
+        return [s for path in self.rnn_paths for s in path.final_states]
 
     @property
     def cost(self):
@@ -329,20 +325,17 @@ class FullLNModel(object):
     def __init__(self, is_training, config, input_, device="/cpu:0"):
         self.input_ = input_
         rapper0 = input_.rapper0
-        verse_length = input_.verse_length
-        word_length = input_.word_length[0]
+        self.verse_lengths = input_.verse_length
         labels = input_.labels
         feat_names = ['chars', 'phones', 'stresses']
         feats = [input_[f] for f in feat_names]
-        seq_lengths =[input_['chars_lengths'], input_['phones_lengths'], input_['stresses_lengths']]
+        self.seq_lengths = [input_['chars_lengths'], input_['phones_lengths'], input_['stresses_lengths']]
         rnn_paths = []
         for i, feat in enumerate(feats):
-            lengths = seq_lengths[i]
+            lengths = self.seq_lengths[i]
             rnn_input = RNNInput(feature=feat,
                                  word_lengths=lengths,
-                                 sequence_lengths=verse_length,
-                                 verse_length=verse_length,
-                                 word_length=word_length)
+                                 verse_lengths=self.verse_lengths)
             with tf.variable_scope("RNNPath_{}".format(feat_names[i])):
                 rnn_path = RNNPath(is_training=is_training,
                                    input_=rnn_input,
@@ -360,7 +353,7 @@ class FullLNModel(object):
                                        labels=labels,
                                        rnn_paths=rnn_paths,
                                        feed_forward_path=feed_forward_path,
-                                       verse_lengths=verse_length,
+                                       verse_lengths=self.verse_lengths,
                                        config=config)
 
     def assign_lr(self, session, lr_value):
@@ -490,9 +483,6 @@ def get_valid_file():
 
 
 def run_epoch(session, model, eval_op=None, verbose=False):
-    # TODO: initial_state and final_state both need to include both char-level and word-level RNN states
-    # TODO: feed_dict feeds the previous state to the next step every time
-
     """Runs the model on the given data."""
     start_time = time.time()
     costs = 0.0
@@ -502,44 +492,38 @@ def run_epoch(session, model, eval_op=None, verbose=False):
     fetches = {
         "cost": model.cost,
         "final_state": model.final_state,
+        "verse_lengths": model.verse_lengths,
+        "sequence_lengths": model.seq_lengths
     }
     if eval_op is not None:
         fetches["eval_op"] = eval_op
 
     for step in range(model.input.epoch_size):
         feed_dict = {}
+        # TODO: figure out how to deal with states in feed_dict
+        # (and rerun extract_features to get rid of extraneious word_lengths)
         for i, s in enumerate(model.initial_state):
-            print "State:", s
             for j, (c, h) in enumerate(s):
-                print "C:", c
-                print "H:", h
-                print "State[i]:", state[i]
-                print "State[i][j]:", state[i][j]
-                print "State[i][j].c:", state[i][j].c
                 feed_dict[c] = state[i][j].c
                 feed_dict[h] = state[i][j].h
 
-        print "feed_dict:"
-        print feed_dict
         vals = session.run(fetches, feed_dict)
-        print "vals:"
-        print vals
         cost = vals["cost"]
         state = vals["final_state"]
-        print vals.keys()
-        # TODO: need to get num_steps from verse_length after running
-        # access the verse_length variable from the model, and include it
-        # in fetches with a key I specify
+        verse_lengths = vals["verse_lengths"]
 
         costs += cost
-        # iters += model.input.num_steps
+        iters += verse_lengths.sum()
+        avg_batch_iters = verse_lengths.mean()
 
-        # if verbose and step % (model.input.epoch_size // 10) == 10:
-            # print("%.3f perplexity: %.3f speed: %.0f wps" %
-                  # (step * 1.0 / model.input.epoch_size, np.exp(costs / iters),
-                   # iters * model.input.batch_size / (time.time() - start_time)))
+        every10 = model.input.epoch_size // 10
+        print_output = (every10 == 0 or step % every10 == 10)
+        if verbose and print_output:
+            print("%.3f perplexity: %.3f speed: %.0f wps" %
+                  (step * 1.0 / model.input.epoch_size, np.exp(costs / avg_batch_iters),
+                   iters / (time.time() - start_time)))
 
-    return np.exp(costs / iters)
+    return np.exp(costs / avg_batch_iters)
 
 def main(_):
     extractor = RapFeatureExtractor(train_filenames=[],

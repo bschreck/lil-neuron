@@ -81,6 +81,21 @@ def num_batches(extractor, batch_size, fname):
         coord.join(threads)
     return num_batches
 
+def run_and_return_one_batch(extractor, batch_size, fname):
+    batched, init_op_local = batched_data_producer(extractor, batch_size, fname, num_epochs=1)
+
+    with tf.Session() as sess:
+        # Initialize the the epoch counter
+        sess.run(init_op_local)
+
+        # Start populating the filename queue.
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(coord=coord)
+        batch = sess.run(batched)
+        coord.request_stop()
+        coord.join(threads)
+    return batch
+
 if __name__ == '__main__':
 
     extractor = RapFeatureExtractor(train_filenames=[],
@@ -91,4 +106,5 @@ if __name__ == '__main__':
     fname = 'data/tf_train_data_test.txt'
     print extractor.special_symbols
     print extractor.char_vocab_length
-    #print num_batches(extractor, batch_size, fname, initialize=False)
+    batch = run_and_return_one_batch(extractor, 4, fname)
+    pdb.set_trace()
