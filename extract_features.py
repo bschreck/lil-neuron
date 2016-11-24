@@ -7,15 +7,11 @@ Pronunciation features:
     - raw phonemes, broken up into groups separated by phrases or lines
     - rhyme scheme as categorical variables (mark each rhyme with same category)
 """
-import pronouncing
 import numpy as np
 import cPickle as pickle
 import os
 import pdb
 import gzip
-from features import PhonemeFeature, WordFeature, StressFeature
-from features import RawStresses, RawPhonemes, RawWordsAsChars
-from features import RapVectorFeature
 from generate_lyric_files import all_filenames
 import tensorflow as tf
 import inflect
@@ -47,6 +43,7 @@ class RapFeatureExtractor(object):
                  static_feature_set=None,
                  gzipped=False,
                  from_config=False,
+                 from_mongo=True,
                  config_file='data/config_train.p'):
         self.db = client['lil-neuron-db']
         self.train_filenames = train_filenames
@@ -55,6 +52,7 @@ class RapFeatureExtractor(object):
         self.gzipped = gzipped
         self.max_nrps = max_rappers_per_verse
         self.config_file = config_file
+        self.from_mongo = from_mongo
 
         self.char2sym = {}
         self.sym2char = {}
@@ -63,23 +61,28 @@ class RapFeatureExtractor(object):
         self.int_to_word = {}
         self.word_int_to_pron = {}
 
-        self._load_special_symbols(from_config)
+        if from_config:
+            self._load_syms_from_config()
+        self._load_special_symbols()
+
         self._load_word_dictionaries()
         self._load_rap_vecs()
         self._load_phone_stresses()
 
     def _load_rap_vecs(self):
-        records = self.db.artists.find({'vector':{'$exists':True}}, {'vector':True, 'name':True})
-        rap_vecs = {}
-        for r in records:
-            name = r['name']
-            rap_vecs[name] = np.array(r['vector'])
-            for c in name:
-                self.get_char_sym(c)
-            self.get_char_sym(name)
-            self.get_word_sym(name)
-        self.len_rapper_vector = len(r['vector'])
-        self.rapper_vectors = rap_vecs
+        if self.from_mongo:
+            records = self.db.artists.find({'vector': {'$exists': True}},
+                                           {'vector': True, 'name': True})
+            rap_vecs = {}
+            for r in records:
+                name = r['name']
+                rap_vecs[name] = np.array(r['vector'])
+                for c in name:
+                    self.get_char_sym(c)
+                self.get_char_sym(name)
+                self.get_word_sym(name)
+            self.rapper_vectors = rap_vecs
+        self.len_rapper_vector = len(self.rapper_vectors.values()[0])
 
     def _load_phone_stresses(self):
         self.stress2sym = copy.copy(self.special_char_symbols)
@@ -96,27 +99,28 @@ class RapFeatureExtractor(object):
             self.get_phone_sym(p)
 
     def _load_word_dictionaries(self):
-        mongo_ints_to_syms = {}
-        records = self.db.dword_to_int.find()
-        for r in records:
-            sym = self.get_word_sym(r['word'])
-            mongo_ints_to_syms[r['int']] = sym
-            if len(r['prons']):
-                self.word_int_to_pron[sym] = r['prons'][0].split()
-            else:
-                self.word_int_to_pron[sym] = []
+        if self.from_mongo:
+            mongo_ints_to_syms = {}
+            records = self.db.dword_to_int.find()
+            for r in records:
+                sym = self.get_word_sym(r['word'])
+                mongo_ints_to_syms[r['int']] = sym
+                if len(r['prons']):
+                    self.word_int_to_pron[sym] = r['prons'][0].split()
+                else:
+                    self.word_int_to_pron[sym] = []
 
-        records = self.db.word_to_dwordint.find()
-        for r in records:
-            self.word_to_intlist[r['word']] = [mongo_ints_to_syms[i] for i in r['int_list']]
+            records = self.db.word_to_dwordint.find()
+            for r in records:
+                self.word_to_intlist[r['word']] = [mongo_ints_to_syms[i] for i in r['int_list']]
 
-        records = self.db.slang_words.find()
-        for r in records:
-            sym = self.get_word_sym(r['word'])
-            if 'pronunciation' in r:
-                self.word_int_to_pron[sym] = r['pronunciation']
-            else:
-                self.word_int_to_pron[sym] = []
+            records = self.db.slang_words.find()
+            for r in records:
+                sym = self.get_word_sym(r['word'])
+                if 'pronunciation' in r:
+                    self.word_int_to_pron[sym] = r['pronunciation']
+                else:
+                    self.word_int_to_pron[sym] = []
         self.unknown_prons = set(self.int_to_word[w] for w,p in self.word_int_to_pron.iteritems() if p == '')
 
     def _load_special_symbols(self, from_config=False):
@@ -124,13 +128,12 @@ class RapFeatureExtractor(object):
         }
         self.special_char_symbols = {
         }
-        if from_config:
-            self._load_syms_from_config()
-        special_symbols = ['<eos>', '<eov>', '<nrp>', '<eor>']
+        special_symbols = ['<eos>', '<eov>', '<nrp>', '<eor>', '<unk>']
         for s in special_symbols:
             word_sym = self.get_word_sym(s)
             char_sym = self.get_char_sym(s)
             self.special_word_symbols[s] = word_sym
+            self.word_int_to_pron[word_sym] = []
             self.special_char_symbols[s] = char_sym
 
     def get_sym(self, full, full2sym, vocab_length, sym2full=None):
@@ -164,6 +167,12 @@ class RapFeatureExtractor(object):
             self.special_word_symbols = data['special_char_symbols']
             self.special_char_symbols = data['special_word_symbols']
 
+            if not self.from_mongo:
+                self.word_to_intlist =   data['word_to_intlist']
+                self.word_to_int     =   data['word_to_int']
+                self.int_to_word     =   data['int_to_word']
+                self.word_int_to_pron =   data['word_int_to_pron']
+                self.rapper_vectors =   data['rapper_vectors']
     def _save_syms_to_config(self):
         with open(self.config_file, 'wb') as f:
             data = {}
@@ -171,6 +180,11 @@ class RapFeatureExtractor(object):
             data['char2sym'] = self.char2sym
             data['special_word_symbols'] = self.special_word_symbols
             data['special_char_symbols'] = self.special_char_symbols
+            data['word_to_intlist'] = self.word_to_intlist
+            data['word_to_int'] = self.word_to_int
+            data['int_to_word'] = self.int_to_word
+            data['word_int_to_pron'] = self.word_int_to_pron
+            data['rapper_vectors'] = self.rapper_vectors
             pickle.dump(data, f)
 
     @property
@@ -273,8 +287,13 @@ class RapFeatureExtractor(object):
         trans[6] = "'"
         trans[11] = ","
         trans[13] = "."
+        punc = string.punctuation
+        # UTF8 nothing chars
+        punc += ''.join([chr(i) for i in xrange(32)])
+        punc += ''.join([chr(i) for i in xrange(127,160)])
+        trans.extend([' ']*(len(punc)-len(trans)))
         trans = ''.join(trans)
-        replace_punctuation = string.maketrans(string.punctuation, trans)
+        replace_punctuation = string.maketrans(punc, trans)
 
         translation = word.replace('\xe2\x80\x99',"'")\
                           .replace('\xd1\x81', 'c')\
@@ -282,16 +301,17 @@ class RapFeatureExtractor(object):
                           .lower()\
                           .translate(replace_punctuation)\
                           .split()
+        trans = {
+            'bud1': 'bud'
+        }
         dwords = []
         syms = []
+        unk_word_int = [self.special_word_symbols['<unk>']]
         for w in translation:
-            try:
-                int_dwords = self.word_to_intlist[w]
-            except:
-                pdb.set_trace()
-                syms.append(1e7)
-                dwords.append('<unk>')
-                continue
+            if w in trans:
+                w = trans[w]
+            # TODO: Might want to check on what words aren't in the word_to_intlist
+            int_dwords = self.word_to_intlist.get(w, unk_word_int)
             if not isinstance(int_dwords, list):
                 int_dwords = [int_dwords]
             syms.extend(int_dwords)
@@ -615,8 +635,8 @@ class RapFeatureExtractor(object):
 
 
 if __name__ == '__main__':
-    filenames = all_filenames("data/lyric_files/Tyler, The Creator")
-    #filenames = all_filenames("data/lyric_files")
+    #filenames = all_filenames("data/lyric_files/Tyler, The Creator")
+    filenames = all_filenames("data/lyric_files")
     train_ratio = .7
     valid_ratio = .2
     train_indices = np.random.choice(np.arange(len(filenames)),
@@ -636,11 +656,13 @@ if __name__ == '__main__':
     print len(train_filenames)
     print len(valid_filenames)
     print len(test_filenames)
-    extractor = RapFeatureExtractor(train_filenames=train_filenames[:1],
-                                    valid_filenames=valid_filenames[:1],
-                                    test_filenames=test_filenames[:1],
-                                    from_config=False,
-                                    config_file='data/config_test.p')
-    extractor.save_tf_record_files(train_file="data/tf_train_data_test.txt",
-                                   valid_file="data/tf_valid_data_test.txt",
-                                   test_file="data/tf_test_data_test.txt")
+    extractor = RapFeatureExtractor(train_filenames=train_filenames,
+                                    valid_filenames=valid_filenames,
+                                    test_filenames=test_filenames,
+                                    from_config=True,
+                                    from_mongo=False,
+                                    config_file='data/config.p')
+    pdb.set_trace()
+    # extractor.save_tf_record_files(train_file="data/tf_train_data_full.txt",
+                                   # valid_file="data/tf_valid_data_full.txt",
+                                   # test_file="data/tf_test_data_full.txt")

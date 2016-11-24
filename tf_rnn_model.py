@@ -22,14 +22,16 @@ flags = tf.flags
 logging = tf.logging
 
 flags.DEFINE_string(
-    "model", "test",
+    "model", "small",
     "A type of model. Possible options are: small, medium, large.")
 flags.DEFINE_string("train_filename", 'data/tf_train_data_test.txt',
                     "where the training data is stored.")
 flags.DEFINE_string("valid_filename", 'data/tf_valid_data_test.txt',
                     "where the validation data is stored.")
 flags.DEFINE_string("test_filename", 'data/tf_test_data_test.txt',
-                    "where the validation data is stored.")
+                    "where the test data is stored.")
+flags.DEFINE_string("extractor_config_file", 'data/config.p',
+                    "Config info for RapFeatureExtractor")
 flags.DEFINE_string("save_path", 'models',
                     "Model output directory.")
 flags.DEFINE_bool("use_fp16", False,
@@ -687,7 +689,7 @@ def main(_):
     extractor = RapFeatureExtractor(train_filenames=[],
                                     valid_filenames=[],
                                     from_config=True,
-                                    config_file='data/config_test.p')
+                                    config_file=FLAGS.extractor_config_file)
     vocab_size = extractor.vocab_length + 1
     char_vocab_size = extractor.char_vocab_length + 1
     rap_vec_size = extractor.len_rapper_vector
