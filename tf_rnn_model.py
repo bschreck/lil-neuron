@@ -34,6 +34,8 @@ flags.DEFINE_string("extractor_config_file", 'data/config.p',
                     "Config info for RapFeatureExtractor")
 flags.DEFINE_string("save_path", 'models',
                     "Model output directory.")
+flags.DEFINE_string("device", '/gpu:0',
+                    "Preferred device.")
 flags.DEFINE_bool("use_fp16", False,
                   "Train using 16-bit floats instead of 32bit floats")
 flags.DEFINE_bool("generate", True,
@@ -96,7 +98,7 @@ class RNNInput(object):
 
 
 class RNNPath(object):
-    def __init__(self, is_training, config, input_, device="/cpu:0"):
+    def __init__(self, is_training, config, input_, device=FLAGS.device):
         self.device = device
         self._input = input_
         feature = input_.feature
@@ -109,36 +111,36 @@ class RNNPath(object):
 
         self.size = config.hidden_size
 
-        # Can experiment with different settings
-        lstm_args = dict(use_peepholes=False,
-                         cell_clip=None,
-                         initializer=None,
-                         num_proj=None,
-                         proj_clip=None,
-                         num_unit_shards=1,
-                         num_proj_shards=1,
-                         forget_bias=1.0,
-                         state_is_tuple=True)
-        char_lstm_cell = tf.nn.rnn_cell.LSTMCell(self.size, **lstm_args)
-        word_lstm_cell = tf.nn.rnn_cell.LSTMCell(2 * self.size, **lstm_args)
-
-        if is_training and config.keep_prob < 1:
-            char_lstm_cell = tf.nn.rnn_cell.DropoutWrapper(char_lstm_cell,
-                                                           output_keep_prob=config.keep_prob)
-            word_lstm_cell = tf.nn.rnn_cell.DropoutWrapper(word_lstm_cell,
-                                                           output_keep_prob=config.keep_prob)
-        word_level_cell = tf.nn.rnn_cell.MultiRNNCell([word_lstm_cell] * config.num_word_layers,
-                                                      state_is_tuple=True)
-        char_level_cell_fw = tf.nn.rnn_cell.MultiRNNCell([char_lstm_cell] * config.num_char_layers,
-                                                         state_is_tuple=True)
-        char_level_cell_bw = tf.nn.rnn_cell.MultiRNNCell([char_lstm_cell] * config.num_char_layers,
-                                                         state_is_tuple=True)
-
-        self._initial_states = [word_level_cell.zero_state(batch_size, data_type()),
-                                char_level_cell_fw.zero_state(batch_size * batch_verse_len, data_type()),
-                                char_level_cell_bw.zero_state(batch_size * batch_verse_len, data_type())]
-
         with tf.device(device):
+            # Can experiment with different settings
+            lstm_args = dict(use_peepholes=False,
+                             cell_clip=None,
+                             initializer=None,
+                             num_proj=None,
+                             proj_clip=None,
+                             num_unit_shards=1,
+                             num_proj_shards=1,
+                             forget_bias=1.0,
+                             state_is_tuple=True)
+            char_lstm_cell = tf.nn.rnn_cell.LSTMCell(self.size, **lstm_args)
+            word_lstm_cell = tf.nn.rnn_cell.LSTMCell(2 * self.size, **lstm_args)
+
+            if is_training and config.keep_prob < 1:
+                char_lstm_cell = tf.nn.rnn_cell.DropoutWrapper(char_lstm_cell,
+                                                               output_keep_prob=config.keep_prob)
+                word_lstm_cell = tf.nn.rnn_cell.DropoutWrapper(word_lstm_cell,
+                                                               output_keep_prob=config.keep_prob)
+            word_level_cell = tf.nn.rnn_cell.MultiRNNCell([word_lstm_cell] * config.num_word_layers,
+                                                          state_is_tuple=True)
+            char_level_cell_fw = tf.nn.rnn_cell.MultiRNNCell([char_lstm_cell] * config.num_char_layers,
+                                                             state_is_tuple=True)
+            char_level_cell_bw = tf.nn.rnn_cell.MultiRNNCell([char_lstm_cell] * config.num_char_layers,
+                                                             state_is_tuple=True)
+
+            self._initial_states = [word_level_cell.zero_state(batch_size, data_type()),
+                                    char_level_cell_fw.zero_state(batch_size * batch_verse_len, data_type()),
+                                    char_level_cell_bw.zero_state(batch_size * batch_verse_len, data_type())]
+
             # [batch_size, verse_len, word_len]
             new_shape = tf.pack([batch_size * batch_verse_len, -1])
             input_data_concat = tf.reshape(feature, new_shape)
@@ -204,73 +206,74 @@ class RNNPath(object):
 
 class ConcatLearn(object):
     def __init__(self, is_training, config, labels, rnn_paths, verse_lengths,
-                 context_network, device="/cpu:0"):
+                 context_network, device=FLAGS.device):
         self.rnn_paths = rnn_paths
         self.context_network = context_network
 
-        verse_len = tf.shape(self.rnn_paths[0].outputs)[1]
-        # separate batch dimension into lists
-        # rnn_paths * [batch_size, verse_len, output_size]
-        outputs = [tf.reshape(path.outputs, [-1, path.output_size]) for path in self.rnn_paths]
-        # rnn_paths * [batch_size * verse_len, output_size]
-        outputs = tf.concat(1, outputs)
-        # (batch_size * verse_len) * [sum(output_sizes)]
+        with tf.device(device):
+            verse_len = tf.shape(self.rnn_paths[0].outputs)[1]
+            # separate batch dimension into lists
+            # rnn_paths * [batch_size, verse_len, output_size]
+            outputs = [tf.reshape(path.outputs, [-1, path.output_size]) for path in self.rnn_paths]
+            # rnn_paths * [batch_size * verse_len, output_size]
+            outputs = tf.concat(1, outputs)
+            # (batch_size * verse_len) * [sum(output_sizes)]
 
-        # [batch_size, ffp.output_size]
-        context_tiled = tf.tile(self.context_network.output, tf.pack([verse_len, 1]))
-        # (batch_size * verse_len) *[ffp.output_size]
-        outputs_flat = tf.concat(1, [context_tiled, outputs])
-        # batch_size * [feed_forward * verse_len * sum(output_sizes)])
-        final_unit_size = sum([path.output_size for path in self.rnn_paths]) + self.context_network.output_size
+            # [batch_size, ffp.output_size]
+            context_tiled = tf.tile(self.context_network.output, tf.pack([verse_len, 1]))
+            # (batch_size * verse_len) *[ffp.output_size]
+            outputs_flat = tf.concat(1, [context_tiled, outputs])
+            # batch_size * [feed_forward * verse_len * sum(output_sizes)])
+            final_unit_size = sum([path.output_size for path in self.rnn_paths]) + self.context_network.output_size
 
-        # final softmax layer
-        # Output layer weights
-        softmax_b = tf.get_variable("softmax_b", [config.vocab_size], dtype=data_type())
-        print "vocab size:", config.vocab_size
-        softmax_W = tf.get_variable(
-            name="softmax_w",
-            initializer=tf.random_normal_initializer(),
-            shape=[final_unit_size, config.vocab_size],
-            dtype=data_type())
+            # final softmax layer
+            # Output layer weights
+            softmax_b = tf.get_variable("softmax_b", [config.vocab_size], dtype=data_type())
+            print "vocab size:", config.vocab_size
+            softmax_W = tf.get_variable(
+                name="softmax_w",
+                initializer=tf.random_normal_initializer(),
+                shape=[final_unit_size, config.vocab_size],
+                dtype=data_type())
 
 
-        # Calculate logits and probs
-        # Reshape so we can calculate them all at once
-        logits_flat = tf.batch_matmul(outputs_flat, softmax_W) + softmax_b
+            # Calculate logits and probs
+            # Reshape so we can calculate them all at once
+            logits_flat = tf.batch_matmul(outputs_flat, softmax_W) + softmax_b
 
-        # Calculate the losses
-        y_flat = tf.reshape(labels, [-1])
-        losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits_flat, y_flat)
+            # Calculate the losses
+            y_flat = tf.reshape(labels, [-1])
+            losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits_flat, y_flat)
 
-        # Mask the losses
-        mask = tf.sign(tf.to_float(y_flat))
-        masked_losses = mask * losses
+            # Mask the losses
+            mask = tf.sign(tf.to_float(y_flat))
+            masked_losses = mask * losses
 
-        # Bring back to [B, T] shape
-        masked_losses = tf.reshape(masked_losses, tf.shape(labels))
+            # Bring back to [B, T] shape
+            masked_losses = tf.reshape(masked_losses, tf.shape(labels))
 
-        # Calculate mean loss
-        mean_loss_by_example = tf.reduce_sum(masked_losses, reduction_indices=1) / tf.cast(verse_lengths, data_type())
-        mean_loss = tf.reduce_mean(mean_loss_by_example)
-        self._cost = cost = mean_loss
+            # Calculate mean loss
+            mean_loss_by_example = tf.reduce_sum(masked_losses, reduction_indices=1) / tf.cast(verse_lengths, data_type())
+            mean_loss = tf.reduce_mean(mean_loss_by_example)
+            self._cost = cost = mean_loss
 
-        self._probs_flat = None
-        if not is_training:
-            self._probs_flat = tf.nn.softmax(logits_flat)
-            return
+            self._probs_flat = None
+            if not is_training:
+                self._probs_flat = tf.nn.softmax(logits_flat)
+                return
 
-        self._lr = tf.Variable(0.0, trainable=False)
-        tvars = tf.trainable_variables()
-        grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars),
-                                          config.max_grad_norm)
-        optimizer = tf.train.GradientDescentOptimizer(self._lr)
-        self._train_op = optimizer.apply_gradients(
-            zip(grads, tvars),
-            global_step=tf.contrib.framework.get_or_create_global_step())
+            self._lr = tf.Variable(0.0, trainable=False)
+            tvars = tf.trainable_variables()
+            grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars),
+                                              config.max_grad_norm)
+            optimizer = tf.train.GradientDescentOptimizer(self._lr)
+            self._train_op = optimizer.apply_gradients(
+                zip(grads, tvars),
+                global_step=tf.contrib.framework.get_or_create_global_step())
 
-        self._new_lr = tf.placeholder(
-            tf.float32, shape=[], name="new_learning_rate")
-        self._lr_update = tf.assign(self._lr, self._new_lr)
+            self._new_lr = tf.placeholder(
+                tf.float32, shape=[], name="new_learning_rate")
+            self._lr_update = tf.assign(self._lr, self._new_lr)
 
     def assign_lr(self, session, lr_value):
         session.run(self._lr_update, feed_dict={self._new_lr: lr_value})
@@ -305,17 +308,20 @@ class ConcatLearn(object):
 
 
 class ContextNetwork(object):
-    def __init__(self, is_training, input_data, input_size, config):
+    def __init__(self, is_training, input_data, input_size, config,
+                 device=FLAGS.device):
         self.input_data= input_data
         self.paths = []
         self.final_size = config.feed_forward_final_size
         for i, rapper in enumerate(input_data):
             with tf.variable_scope("ContextRapper{}".format(i)):
-                path = FeedForwardPath(is_training, rapper, input_size, config)
+                path = FeedForwardPath(is_training, rapper, input_size, config,
+                                       device=device)
                 self.paths.append(path)
         path_outputs = [p.output for p in self.paths]
 
-        concat = tf.concat(1, path_outputs)
+        with tf.device(device):
+            concat = tf.concat(1, path_outputs)
         last_input_size = self.paths[0].output_size * self.num_paths
         self.last_layer = self.paths[0].layer(concat, last_input_size,
                                               self.final_size, name='ConcatLayer')
@@ -334,7 +340,8 @@ class ContextNetwork(object):
 
 
 class FeedForwardPath(object):
-    def __init__(self, is_training, input_data, input_size, config):
+    def __init__(self, is_training, input_data, input_size, config,
+                 device=FLAGS.device):
         self.is_training = is_training
         self.keep_prob = config.keep_prob
         self.sizes = config.feed_forward_sizes
@@ -345,12 +352,14 @@ class FeedForwardPath(object):
         for i, sizes in enumerate(zip(self.sizes, input_sizes)):
             sz, input_sz = sizes
             name = "DenseLayer{}".format(i)
-            layer_input = self.layer(layer_input, input_sz, sz, name=name)
+            layer_input = self.layer(layer_input, input_sz, sz, name=name,
+                                     device=device)
             layers.append(layer_input)
         self.output = layer_input
 
-    def layer(self, input_data, input_size, size, name='layer'):
-        with tf.variable_scope(name):
+    def layer(self, input_data, input_size, size, name='layer',
+              device=FLAGS.device):
+        with tf.variable_scope(name), tf.device(device):
             W = self.weight_variable([input_size, size])
             b = self.bias_variable([size])
             layer = tf.nn.relu(tf.matmul(input_data, W) + b)
@@ -377,7 +386,7 @@ class FeedForwardPath(object):
 
 
 class FullLNModel(object):
-    def __init__(self, is_training, config, input_, device="/cpu:0"):
+    def __init__(self, is_training, config, input_, device=FLAGS.device):
         self.input_ = input_
         num_rappers = config.num_rappers
         rappers = []
@@ -398,14 +407,16 @@ class FullLNModel(object):
             with tf.variable_scope("RNNPath_{}".format(feat_names[i])):
                 rnn_path = RNNPath(is_training=is_training,
                                    input_=rnn_input,
-                                   config=config)
+                                   config=config,
+                                   device=device)
                 rnn_paths.append(rnn_path)
 
         with tf.variable_scope("ContextNetwork"):
             context_network = ContextNetwork(is_training,
                                              input_data=rappers,
                                              input_size=config.rap_vec_size,
-                                             config=config)
+                                             config=config,
+                                             device=device)
 
         with tf.variable_scope("ConcatLearn"):
             self.concat_learn = ConcatLearn(is_training=is_training,
@@ -413,7 +424,8 @@ class FullLNModel(object):
                                             rnn_paths=rnn_paths,
                                             context_network=context_network,
                                             verse_lengths=self.verse_lengths,
-                                            config=config)
+                                            config=config,
+                                            device=device)
 
     @property
     def input_tensors(self):
@@ -617,7 +629,8 @@ def generate_text(extractor, gen_config, rappers, starter):
                                 input_=gen_input)
 
         sv = tf.train.Supervisor(logdir=FLAGS.save_path)
-        with sv.managed_session() as session:
+        tf_config = tf.ConfigProto(allow_soft_placement=True)
+        with sv.managed_session(config=tf_config) as session:
             # Restore variables from disk.
             ckpt = tf.train.get_checkpoint_state(FLAGS.save_path)
             if ckpt and ckpt.model_checkpoint_path:
@@ -730,7 +743,8 @@ def main(_):
 
         print "initializing session:"
         sv = tf.train.Supervisor(logdir=FLAGS.save_path)
-        with sv.managed_session() as session:
+        tf_config = tf.ConfigProto(allow_soft_placement=True)
+        with sv.managed_session(config=tf_config) as session:
             for i in range(config.max_max_epoch):
                 lr_decay = config.lr_decay ** max(i + 1 - config.max_epoch, 0.0)
                 m.assign_lr(session, config.learning_rate * lr_decay)
