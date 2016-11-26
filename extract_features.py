@@ -11,12 +11,15 @@ import numpy as np
 import cPickle as pickle
 import pdb
 import gzip
-#from generate_lyric_files import all_filenames
 import tensorflow as tf
 import string
-# from pymongo import MongoClient
-# import copy
-# client = MongoClient()
+import copy
+try:
+    from generate_lyric_files import all_filenames
+    from pymongo import MongoClient
+    client = MongoClient()
+except:
+    pass
 
 # TODO: just use first pronunciation for words
 # TODO: see if there's an easy way to load in unstandardized vectors from verse SequenceExamples, and have tensor flow do batching
@@ -41,7 +44,8 @@ class RapFeatureExtractor(object):
                  from_config=False,
                  from_mongo=True,
                  config_file='data/config_train.p'):
-        self.db = client['lil-neuron-db']
+        if from_mongo:
+            self.db = client['lil-neuron-db']
         self.train_filenames = train_filenames
         self.valid_filenames = valid_filenames
         self.test_filenames = test_filenames

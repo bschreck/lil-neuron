@@ -702,6 +702,7 @@ def main(_):
     extractor = RapFeatureExtractor(train_filenames=[],
                                     valid_filenames=[],
                                     from_config=True,
+                                    from_mongo=False,
                                     config_file=FLAGS.extractor_config_file)
     vocab_size = extractor.vocab_length + 1
     char_vocab_size = extractor.char_vocab_length + 1
