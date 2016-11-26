@@ -27,7 +27,8 @@ def batched_data_producer(extractor, batch_size, filename, num_epochs=None, name
 def num_batches(extractor, batch_size, fname):
     batched, init_op_local = batched_data_producer(extractor, batch_size, fname, num_epochs=1)
 
-    with tf.Session() as sess:
+    tf_config = tf.ConfigProto(allow_soft_placement=True)
+    with tf.Session(config=tf_config) as sess:
         # Initialize the the epoch counter
         sess.run(init_op_local)
 

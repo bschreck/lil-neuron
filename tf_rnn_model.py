@@ -34,7 +34,7 @@ flags.DEFINE_string("extractor_config_file", 'data/config.p',
                     "Config info for RapFeatureExtractor")
 flags.DEFINE_string("save_path", 'models',
                     "Model output directory.")
-flags.DEFINE_string("device", '/gpu:0',
+flags.DEFINE_string("device", '/cpu:0',
                     "Preferred device.")
 flags.DEFINE_bool("use_fp16", False,
                   "Train using 16-bit floats instead of 32bit floats")
@@ -219,6 +219,8 @@ class ConcatLearn(object):
             outputs = tf.concat(1, outputs)
             # (batch_size * verse_len) * [sum(output_sizes)]
 
+            # TODO: I think the large memoery issue has to do with tiling here, which seems stupid
+            # need to check on how to do this without reshaping along verse_len
             # [batch_size, ffp.output_size]
             context_tiled = tf.tile(self.context_network.output, tf.pack([verse_len, 1]))
             # (batch_size * verse_len) *[ffp.output_size]
@@ -227,7 +229,7 @@ class ConcatLearn(object):
             final_unit_size = sum([path.output_size for path in self.rnn_paths]) + self.context_network.output_size
             print "final_unit_size:", final_unit_size
             # one more dense layer to shrink size
-            final_dense_W = tf.get_variable("final_dense", 
+            final_dense_W = tf.get_variable("final_dense",
                 initializer=tf.random_normal_initializer(),
                 shape=[final_unit_size, config.final_dense_size],
                 dtype=data_type())
@@ -274,7 +276,9 @@ class ConcatLearn(object):
 
             self._lr = tf.Variable(0.0, trainable=False)
             tvars = tf.trainable_variables()
-            grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars),
+            aggmeth = tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N
+            grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars,
+                                                           aggregation_method=aggmeth),
                                               config.max_grad_norm)
             optimizer = tf.train.GradientDescentOptimizer(self._lr)
             self._train_op = optimizer.apply_gradients(
@@ -744,6 +748,7 @@ def main(_):
                 m = FullLNModel(is_training=True, config=config, input_=train_ln_input)
             tf.scalar_summary("Training Loss", m.cost)
             tf.scalar_summary("Learning Rate", m.lr)
+        return
         with tf.name_scope("Valid"):
             print "initializing valid model:"
             valid_ln_input = LNInput(extractor=extractor, config=config, filename=valid_filename, name="ValidInput")
