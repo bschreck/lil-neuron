@@ -211,10 +211,11 @@ class ConcatLearn(object):
         self.context_network = context_network
 
         with tf.device(device):
-            verse_len = tf.shape(self.rnn_paths[0].outputs)[1]
+            #verse_len = tf.shape(self.rnn_paths[0].outputs)[1]
+            verse_len = 2
             # separate batch dimension into lists
             # rnn_paths * [batch_size, verse_len, output_size]
-            outputs = [tf.reshape(path.outputs, [-1, path.output_size]) for path in self.rnn_paths]
+            outputs = [tf.reshape(tf.slice(path.outputs, [0,0,0], [-1,2,-1]), [-1, path.output_size]) for path in self.rnn_paths]
             # rnn_paths * [batch_size * verse_len, output_size]
             outputs = tf.concat(1, outputs)
             # (batch_size * verse_len) * [sum(output_sizes)]
@@ -748,7 +749,6 @@ def main(_):
                 m = FullLNModel(is_training=True, config=config, input_=train_ln_input)
             tf.scalar_summary("Training Loss", m.cost)
             tf.scalar_summary("Learning Rate", m.lr)
-        return
         with tf.name_scope("Valid"):
             print "initializing valid model:"
             valid_ln_input = LNInput(extractor=extractor, config=config, filename=valid_filename, name="ValidInput")
