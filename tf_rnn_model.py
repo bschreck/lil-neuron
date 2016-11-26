@@ -38,7 +38,7 @@ flags.DEFINE_string("device", '/gpu:0',
                     "Preferred device.")
 flags.DEFINE_bool("use_fp16", False,
                   "Train using 16-bit floats instead of 32bit floats")
-flags.DEFINE_bool("generate", True,
+flags.DEFINE_bool("generate", False,
                   "If True, generate text instead of training")
 
 FLAGS = flags.FLAGS
@@ -225,7 +225,15 @@ class ConcatLearn(object):
             outputs_flat = tf.concat(1, [context_tiled, outputs])
             # batch_size * [feed_forward * verse_len * sum(output_sizes)])
             final_unit_size = sum([path.output_size for path in self.rnn_paths]) + self.context_network.output_size
+            print "final_unit_size:", final_unit_size
+            # one more dense layer to shrink size
+            final_dense_W = tf.get_variable("final_dense", 
+                initializer=tf.random_normal_initializer(),
+                shape=[final_unit_size, config.final_dense_size],
+                dtype=data_type())
+            final_dense_b = tf.get_variable("final_dense_b", [config.final_dense_size], dtype=data_type())
 
+            final_dense_out = tf.batch_matmul(outputs_flat, final_dense_W) + final_dense_b
             # final softmax layer
             # Output layer weights
             softmax_b = tf.get_variable("softmax_b", [config.vocab_size], dtype=data_type())
@@ -233,13 +241,15 @@ class ConcatLearn(object):
             softmax_W = tf.get_variable(
                 name="softmax_w",
                 initializer=tf.random_normal_initializer(),
-                shape=[final_unit_size, config.vocab_size],
+                shape=[config.final_dense_size, config.vocab_size],
                 dtype=data_type())
 
 
+            print "softmax_W:", softmax_W
             # Calculate logits and probs
             # Reshape so we can calculate them all at once
-            logits_flat = tf.batch_matmul(outputs_flat, softmax_W) + softmax_b
+            logits_flat = tf.batch_matmul(final_dense_out, softmax_W) + softmax_b
+            print "logits_flat:", logits_flat
 
             # Calculate the losses
             y_flat = tf.reshape(labels, [-1])
@@ -492,6 +502,7 @@ class SmallConfig(Config):
     batch_size = 20
     feed_forward_sizes = [50, 20, 10]
     feed_forward_final_size = 10
+    final_dense_size = 20
 
 
 class MediumConfig(Config):
@@ -510,6 +521,7 @@ class MediumConfig(Config):
     batch_size = 20
     feed_forward_sizes = [100, 50, 25]
     feed_forward_final_size = 25
+    final_dense_size = 30
 
 
 class LargeConfig(Config):
@@ -527,6 +539,7 @@ class LargeConfig(Config):
     batch_size = 20
     feed_forward_sizes = [200, 150, 50]
     feed_forward_final_size = 50
+    final_dense_size = 50
 
 
 class TestConfig(Config):
@@ -544,6 +557,7 @@ class TestConfig(Config):
     batch_size = 4
     feed_forward_sizes = [4, 3, 2]
     feed_forward_final_size = 2
+    final_dense_size = 2
 
 def get_config(*args):
     if FLAGS.model == "small":
