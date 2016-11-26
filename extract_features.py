@@ -9,18 +9,14 @@ Pronunciation features:
 """
 import numpy as np
 import cPickle as pickle
-import os
 import pdb
 import gzip
-from generate_lyric_files import all_filenames
+#from generate_lyric_files import all_filenames
 import tensorflow as tf
-import inflect
-import re
-import time
 import string
-from pymongo import MongoClient
-import copy
-client = MongoClient()
+# from pymongo import MongoClient
+# import copy
+# client = MongoClient()
 
 # TODO: just use first pronunciation for words
 # TODO: see if there's an easy way to load in unstandardized vectors from verse SequenceExamples, and have tensor flow do batching
