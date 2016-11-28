@@ -418,7 +418,7 @@ class RapFeatureExtractor(object):
             actual_input_data[key] = array[np.newaxis, :]
 
         verse_ex = self.make_verse_instance(features, labels, context)
-        tensor_dict, init_op_local = self.read_and_decode_single_example(from_example=verse_ex)
+        tensor_dict, init_op_local = self.read_and_decode_single_example(verse_length, from_example=verse_ex)
         # Add a batch of 1
         for key, value in tensor_dict.iteritems():
             tensor_dict[key] = tf.expand_dims(value, 0)
@@ -543,7 +543,7 @@ class RapFeatureExtractor(object):
             writer.close()
         self._save_syms_to_config()
 
-    def read_and_decode_single_example(self, from_filename=None, from_example=None, num_epochs=None):
+    def read_and_decode_single_example(self, max_num_steps, from_filename=None, from_example=None, num_epochs=None):
         #"data/tf_train_data.txt"
         assert from_filename is not None or from_example is not None
         if from_filename:
@@ -581,10 +581,32 @@ class RapFeatureExtractor(object):
             sequence_features=sequence_features
         )
 
-        init_op_local = tf.initialize_local_variables()
-
         casted_tensors = self.cast_tensors(context_parsed, sequence_parsed)
+
+
+        init_op_local = tf.initialize_local_variables()
         return casted_tensors, init_op_local
+
+        # num_split = tf.ceil(length / max_num_steps)
+
+        # context_keys = context_features.keys()
+        # seq_keys = ["phones", "stresses", "chars", "labels"]
+        # other_keys = [s+".lengths" for s in seq_keys[:-1]]
+
+        # new_examples = [[casted_tensors[k] for k in context_features]
+                        # for i in xrange(num_split)]
+        # for seq in seq_keys + other_keys:
+            # original = casted_tensors[seq]
+            # split = tf.split(0, num_split, original)
+            # for i, s in enumerate(split):
+                # new_examples[i].append(s)
+        # step_queue = tf.FIFOQueue(max_num_steps, tf.int32)
+        # step_queue.enqueue_many(new_examples)
+        # single_example = step_queue.dequeue()
+
+        # key_ordering = context_keys + seq_keys + other_keys
+        # init_op_local = tf.initialize_local_variables()
+        # return key_ordering, single_example, init_op_local
 
     def cast_tensors(self, context, sequence):
         casted = {}

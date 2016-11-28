@@ -22,7 +22,7 @@ flags = tf.flags
 logging = tf.logging
 
 flags.DEFINE_string(
-    "model", "small",
+    "model", "test",
     "A type of model. Possible options are: small, medium, large.")
 flags.DEFINE_string("train_filename", 'data/tf_train_data_test.txt',
                     "where the training data is stored.")
@@ -54,9 +54,10 @@ class LNInput(object):
     def __init__(self, extractor, config, filename, name=None):
         self.extractor = extractor
         self.batch_size = config.batch_size
+        self.max_num_steps = config.max_num_steps
         self.filename = filename
-        self.input_data, _ = reader.batched_data_producer(self.extractor, self.batch_size, self.filename, name=name)
-        self._epoch_size = reader.num_batches(extractor, self.batch_size, self.filename)
+        self._epoch_size = reader.num_batches(extractor, self.batch_size, self.max_num_steps, self.filename)
+        self.input_data, _, _ = reader.batched_data_producer(self.extractor, self.batch_size, self.max_num_steps, self.filename, name=name)
 
     @property
     def epoch_size(self):
@@ -211,11 +212,10 @@ class ConcatLearn(object):
         self.context_network = context_network
 
         with tf.device(device):
-            #verse_len = tf.shape(self.rnn_paths[0].outputs)[1]
-            verse_len = 2
+            verse_len = tf.shape(self.rnn_paths[0].outputs)[1]
             # separate batch dimension into lists
             # rnn_paths * [batch_size, verse_len, output_size]
-            outputs = [tf.reshape(tf.slice(path.outputs, [0,0,0], [-1,2,-1]), [-1, path.output_size]) for path in self.rnn_paths]
+            outputs = [tf.reshape(path.outputs, [-1, path.output_size]) for path in self.rnn_paths]
             # rnn_paths * [batch_size * verse_len, output_size]
             outputs = tf.concat(1, outputs)
             # (batch_size * verse_len) * [sum(output_sizes)]
@@ -229,14 +229,14 @@ class ConcatLearn(object):
             # batch_size * [feed_forward * verse_len * sum(output_sizes)])
             final_unit_size = sum([path.output_size for path in self.rnn_paths]) + self.context_network.output_size
             print "final_unit_size:", final_unit_size
-            # one more dense layer to shrink size
-            final_dense_W = tf.get_variable("final_dense",
-                initializer=tf.random_normal_initializer(),
-                shape=[final_unit_size, config.final_dense_size],
-                dtype=data_type())
-            final_dense_b = tf.get_variable("final_dense_b", [config.final_dense_size], dtype=data_type())
+            # # one more dense layer to shrink size
+            # final_dense_W = tf.get_variable("final_dense",
+                # initializer=tf.random_normal_initializer(),
+                # shape=[final_unit_size, config.final_dense_size],
+                # dtype=data_type())
+            # final_dense_b = tf.get_variable("final_dense_b", [config.final_dense_size], dtype=data_type())
 
-            final_dense_out = tf.batch_matmul(outputs_flat, final_dense_W) + final_dense_b
+            #Jkfinal_dense_out = tf.batch_matmul(outputs_flat, final_dense_W) + final_dense_b
             # final softmax layer
             # Output layer weights
             softmax_b = tf.get_variable("softmax_b", [config.vocab_size], dtype=data_type())
@@ -244,14 +244,14 @@ class ConcatLearn(object):
             softmax_W = tf.get_variable(
                 name="softmax_w",
                 initializer=tf.random_normal_initializer(),
-                shape=[config.final_dense_size, config.vocab_size],
+                shape=[final_unit_size, config.vocab_size],
                 dtype=data_type())
 
 
             print "softmax_W:", softmax_W
             # Calculate logits and probs
             # Reshape so we can calculate them all at once
-            logits_flat = tf.batch_matmul(final_dense_out, softmax_W) + softmax_b
+            logits_flat = tf.batch_matmul(outputs_flat, softmax_W) + softmax_b
             print "logits_flat:", logits_flat
 
             # Calculate the losses
@@ -497,8 +497,8 @@ class SmallConfig(Config):
     learning_rate = 1.0
     max_grad_norm = 5
     num_word_layers = 2
-    num_char_layers = 2
-    num_steps = 20
+    num_char_layers = 1
+    max_num_steps = 20
     hidden_size = 200
     max_epoch = 4
     max_max_epoch = 13
@@ -516,8 +516,8 @@ class MediumConfig(Config):
     learning_rate = 1.0
     max_grad_norm = 5
     num_word_layers = 2
-    num_char_layers = 2
-    num_steps = 35
+    num_char_layers = 1
+    max_num_steps = 35
     hidden_size = 650
     max_epoch = 6
     max_max_epoch = 39
@@ -535,7 +535,8 @@ class LargeConfig(Config):
     learning_rate = 1.0
     max_grad_norm = 10
     num_word_layers = 2
-    num_char_layers = 2
+    num_char_layers = 1
+    max_num_steps = 35
     hidden_size = 1500
     max_epoch = 14
     max_max_epoch = 55
@@ -554,6 +555,7 @@ class TestConfig(Config):
     max_grad_norm = 1
     num_word_layers = 2
     num_char_layers = 2
+    max_num_steps = 2
     hidden_size = 2
     max_epoch = 1
     max_max_epoch = 1
@@ -739,6 +741,7 @@ def main(_):
         generate_text(extractor, eval_gen_config, rappers, starter)
         return
 
+    print "initializing session:"
     with tf.Graph().as_default():
         initializer = tf.random_uniform_initializer(-config.init_scale,
                                                     config.init_scale)
@@ -761,7 +764,6 @@ def main(_):
             with tf.variable_scope("Model", reuse=True, initializer=initializer):
                 mtest = FullLNModel(is_training=False, config=eval_gen_config, input_=test_ln_input)
 
-        print "initializing session:"
         sv = tf.train.Supervisor(logdir=FLAGS.save_path)
         tf_config = tf.ConfigProto(allow_soft_placement=True)
         with sv.managed_session(config=tf_config) as session:
