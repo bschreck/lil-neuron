@@ -42,9 +42,8 @@ class RapFeatureExtractor(object):
                  static_feature_set=None,
                  gzipped=False,
                  from_config=False,
-                 from_mongo=True,
                  config_file='data/config_train.p'):
-        if from_mongo:
+        if not from_config:
             self.db = client['lil-neuron-db']
         self.train_filenames = train_filenames
         self.valid_filenames = valid_filenames
@@ -52,10 +51,13 @@ class RapFeatureExtractor(object):
         self.gzipped = gzipped
         self.max_nrps = max_rappers_per_verse
         self.config_file = config_file
-        self.from_mongo = from_mongo
 
         self.char2sym = {}
         self.sym2char = {}
+        self.stress2sym = {}
+        self.sym2stress = {}
+        self.phone2sym = {}
+        self.sym2phone = {}
         self.word_to_intlist = {}
         self.word_to_int = {}
         self.int_to_word = {}
@@ -63,65 +65,60 @@ class RapFeatureExtractor(object):
 
         if from_config:
             self._load_syms_from_config()
-        self._load_special_symbols()
-
-        self._load_word_dictionaries()
-        self._load_rap_vecs()
-        self._load_phone_stresses()
+        else:
+            self._load_special_symbols()
+            self._load_rap_vecs()
+            self._load_phone_stresses()
+            self._load_word_dictionaries()
+        self.len_rapper_vector = len(self.rapper_vectors.values()[0])
+        self.unknown_prons = set(self.int_to_word[w] for w, p in self.word_int_to_pron.iteritems() if len(p) == 0)
 
     def _load_rap_vecs(self):
-        if self.from_mongo:
-            records = self.db.artists.find({'vector': {'$exists': True}},
-                                           {'vector': True, 'name': True})
-            rap_vecs = {}
-            for r in records:
-                name = r['name']
-                rap_vecs[name] = np.array(r['vector'])
-                for c in name:
-                    self.get_char_sym(c)
-                self.get_char_sym(name)
-                self.get_word_sym(name)
-            self.rapper_vectors = rap_vecs
-        self.len_rapper_vector = len(self.rapper_vectors.values()[0])
+        records = self.db.artists.find({'vector': {'$exists': True}},
+                                       {'vector': True, 'name': True})
+        rap_vecs = {}
+        chars_in_rappers = set()
+        for r in records:
+            name = r['name']
+            rap_vecs[name] = np.array(r['vector'])
+            chars_in_rappers |= set(name)
+
+            self.get_char_sym(name)
+            self.get_phone_sym(name)
+            self.get_stress_sym(name)
+            self.get_word_sym(name)
+        for c in chars_in_rappers:
+            self.get_char_sym(c)
+        self.rapper_vectors = rap_vecs
 
     def _load_phone_stresses(self):
-        self.stress2sym = copy.copy(self.special_char_symbols)
-        self.phone2sym = copy.copy(self.special_char_symbols)
-        # rapper symbols can be in phones/stresses as well
-        for rapper in self.rapper_vectors:
-            sym = self.char2sym[rapper]
-            self.stress2sym[sym] = rapper
-            self.phone2sym[sym] = rapper
-
         for s in self.all_stresses:
             self.get_stress_sym(s)
         for p in self.all_phones:
             self.get_phone_sym(p)
 
     def _load_word_dictionaries(self):
-        if self.from_mongo:
-            mongo_ints_to_syms = {}
-            records = self.db.dword_to_int.find()
-            for r in records:
-                sym = self.get_word_sym(r['word'])
-                mongo_ints_to_syms[r['int']] = sym
-                if len(r['prons']):
-                    self.word_int_to_pron[sym] = r['prons'][0].split()
-                else:
-                    self.word_int_to_pron[sym] = []
+        mongo_ints_to_syms = {}
+        records = self.db.dword_to_int.find()
+        for r in records:
+            sym = self.get_word_sym(r['word'])
+            mongo_ints_to_syms[r['int']] = sym
+            if len(r['prons']):
+                self.word_int_to_pron[sym] = r['prons'][0].split()
+            else:
+                self.word_int_to_pron[sym] = []
 
-            records = self.db.word_to_dwordint.find()
-            for r in records:
-                self.word_to_intlist[r['word']] = [mongo_ints_to_syms[i] for i in r['int_list']]
+        records = self.db.word_to_dwordint.find()
+        for r in records:
+            self.word_to_intlist[r['word']] = [mongo_ints_to_syms[i] for i in r['int_list']]
 
-            records = self.db.slang_words.find()
-            for r in records:
-                sym = self.get_word_sym(r['word'])
-                if 'pronunciation' in r:
-                    self.word_int_to_pron[sym] = r['pronunciation']
-                else:
-                    self.word_int_to_pron[sym] = []
-        self.unknown_prons = set(self.int_to_word[w] for w,p in self.word_int_to_pron.iteritems() if p == '')
+        records = self.db.slang_words.find()
+        for r in records:
+            sym = self.get_word_sym(r['word'])
+            if 'pronunciation' in r:
+                self.word_int_to_pron[sym] = r['pronunciation']
+            else:
+                self.word_int_to_pron[sym] = []
 
     def _load_special_symbols(self, from_config=False):
         self.special_word_symbols = {
@@ -132,6 +129,8 @@ class RapFeatureExtractor(object):
         for s in special_symbols:
             word_sym = self.get_word_sym(s)
             char_sym = self.get_char_sym(s)
+            self.get_phone_sym(s)
+            self.get_stress_sym(s)
             self.special_word_symbols[s] = word_sym
             self.word_int_to_pron[word_sym] = []
             self.special_char_symbols[s] = char_sym
@@ -153,10 +152,10 @@ class RapFeatureExtractor(object):
         return self.get_sym(char, self.char2sym, self.char_vocab_length, sym2full=self.sym2char)
 
     def get_phone_sym(self, phone):
-        return self.get_sym(phone, self.phone2sym, self.phone_vocab_length)
+        return self.get_sym(phone, self.phone2sym, self.phone_vocab_length, sym2full=self.sym2phone)
 
     def get_stress_sym(self, stress):
-        return self.get_sym(stress, self.stress2sym, self.stress_vocab_length)
+        return self.get_sym(stress, self.stress2sym, self.stress_vocab_length, sym2full=self.sym2stress)
 
     # TODO: save syms to mongo and load from there
     def _load_syms_from_config(self):
@@ -164,20 +163,27 @@ class RapFeatureExtractor(object):
             data = pickle.load(f)
             self.sym2char = data['sym2char']
             self.char2sym = data['char2sym']
+            self.sym2phone = data['sym2phone']
+            self.phone2sym = data['phone2sym']
+            self.sym2stress = data['sym2stress']
+            self.stress2sym = data['stress2sym']
             self.special_word_symbols = data['special_char_symbols']
             self.special_char_symbols = data['special_word_symbols']
+            self.word_to_intlist =   data['word_to_intlist']
+            self.word_to_int     =   data['word_to_int']
+            self.int_to_word     =   data['int_to_word']
+            self.word_int_to_pron =   data['word_int_to_pron']
+            self.rapper_vectors =   data['rapper_vectors']
 
-            if not self.from_mongo:
-                self.word_to_intlist =   data['word_to_intlist']
-                self.word_to_int     =   data['word_to_int']
-                self.int_to_word     =   data['int_to_word']
-                self.word_int_to_pron =   data['word_int_to_pron']
-                self.rapper_vectors =   data['rapper_vectors']
     def _save_syms_to_config(self):
         with open(self.config_file, 'wb') as f:
             data = {}
             data['sym2char'] = self.sym2char
             data['char2sym'] = self.char2sym
+            data['sym2phone']  = self.sym2phone
+            data['phone2sym']  = self.phone2sym
+            data['sym2stress'] = self.sym2stress
+            data['stress2sym'] = self.stress2sym
             data['special_word_symbols'] = self.special_word_symbols
             data['special_char_symbols'] = self.special_char_symbols
             data['word_to_intlist'] = self.word_to_intlist
@@ -484,7 +490,7 @@ class RapFeatureExtractor(object):
     def load_verses(self, ftype):
         if ftype == 'train':
             filenames = self.train_filenames
-        elif ftype == 'train':
+        elif ftype == 'valid':
             filenames = self.valid_filenames
         else:
             filenames = self.test_filenames
@@ -678,13 +684,11 @@ if __name__ == '__main__':
     print len(train_filenames)
     print len(valid_filenames)
     print len(test_filenames)
-    extractor = RapFeatureExtractor(train_filenames=train_filenames,
-                                    valid_filenames=valid_filenames,
-                                    test_filenames=test_filenames,
-                                    from_config=True,
-                                    from_mongo=False,
-                                    config_file='data/config.p')
-    pdb.set_trace()
-    # extractor.save_tf_record_files(train_file="data/tf_train_data_full.txt",
-                                   # valid_file="data/tf_valid_data_full.txt",
-                                   # test_file="data/tf_test_data_full.txt")
+    extractor = RapFeatureExtractor(train_filenames=train_filenames[:1],
+                                    valid_filenames=valid_filenames[:1],
+                                    test_filenames=test_filenames[:1],
+                                    from_config=False,
+                                    config_file='data/config_new.p')
+    extractor.save_tf_record_files(train_file="data/tf_train_data_new.txt",
+                                   valid_file="data/tf_valid_data_new.txt",
+                                   test_file="data/tf_test_data_new.txt")

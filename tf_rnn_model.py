@@ -24,13 +24,13 @@ logging = tf.logging
 flags.DEFINE_string(
     "model", "test",
     "A type of model. Possible options are: small, medium, large.")
-flags.DEFINE_string("train_filename", 'data/tf_train_data_test.txt',
+flags.DEFINE_string("train_filename", 'data/tf_train_data_new.txt',
                     "where the training data is stored.")
-flags.DEFINE_string("valid_filename", 'data/tf_valid_data_test.txt',
+flags.DEFINE_string("valid_filename", 'data/tf_valid_data_new.txt',
                     "where the validation data is stored.")
-flags.DEFINE_string("test_filename", 'data/tf_test_data_test.txt',
+flags.DEFINE_string("test_filename", 'data/tf_test_data_new.txt',
                     "where the test data is stored.")
-flags.DEFINE_string("extractor_config_file", 'data/config.p',
+flags.DEFINE_string("extractor_config_file", 'data/config_new.p',
                     "Config info for RapFeatureExtractor")
 flags.DEFINE_string("save_path", 'models',
                     "Model output directory.")
@@ -56,6 +56,8 @@ class LNInput(object):
         self.batch_size = config.batch_size
         self.max_num_steps = config.max_num_steps
         self.filename = filename
+        sample_batches = reader.run_and_return_batches(extractor, 2, self.batch_size, 100, self.filename)
+        pdb.set_trace()
         self._epoch_size = reader.num_batches(extractor, self.batch_size, self.max_num_steps, self.filename)
         self.input_data, _, _ = reader.batched_data_producer(self.extractor, self.batch_size, self.max_num_steps, self.filename, name=name)
 
@@ -723,7 +725,6 @@ def main(_):
     extractor = RapFeatureExtractor(train_filenames=[],
                                     valid_filenames=[],
                                     from_config=True,
-                                    from_mongo=False,
                                     config_file=FLAGS.extractor_config_file)
     vocab_size = extractor.vocab_length + 1
     char_vocab_size = extractor.char_vocab_length + 1
