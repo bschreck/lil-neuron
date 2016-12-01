@@ -590,7 +590,7 @@ class RapFeatureExtractor(object):
         casted_tensors = self.cast_tensors(context_parsed, sequence_parsed)
 
 
-        init_op_local = tf.initialize_local_variables()
+        init_op_local = tf.local_variables_initializer()
         return casted_tensors, init_op_local
 
         # num_split = tf.ceil(length / max_num_steps)

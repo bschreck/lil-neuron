@@ -27,7 +27,7 @@ def batched_data_producer(extractor, graph, batch_size, max_num_steps, filename,
         batch2 = queue2.dequeue_up_to(max_num_steps)
     tf.train.add_queue_runner(tf.train.QueueRunner(queue2, [batch_op2]))
 
-    init_op_local2 = tf.initialize_local_variables()
+    init_op_local2 = tf.local_variables_initializer()
     # TODO: figure out new verse_lengths per example in batch
     # how to make sure a new verse doesn't start in the middle
     # it's like the second queue needs to pull all the elements of the first queue out
@@ -92,7 +92,7 @@ def batched_data_producer(extractor, graph, batch_size, max_num_steps, filename,
     batch.update({k: batched_data[i] for i, k in enumerate(keys)
                   if k not in batch})
 
-    init_op_local2 = tf.initialize_local_variables()
+    init_op_local2 = tf.global_variables_initializer()
     return batch, init_op_local, init_op_local2
 
 
@@ -155,7 +155,7 @@ def run_and_return_batches(extractor, num_batches, batch_size, max_num_steps, fn
 
         tf_config = tf.ConfigProto(allow_soft_placement=True)
                                    #inter_op_parallelism_threads=20)
-        initializer = tf.initialize_all_variables()
+        initializer = tf.global_variables_initializer()
 
         batches = []
         num_batches_run = 0
