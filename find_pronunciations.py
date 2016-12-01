@@ -111,8 +111,10 @@ def load_dicts():
 
     records = db.slang_words.find({"pronunciation": {'$exists': False}})
     global SLANG_WORD_COUNTS
-    SLANG_WORD_COUNTS = sorted([(r["word"], r["count"]) for r in records],
+    SLANG_WORD_COUNTS = sorted([(r["word"], r["count"]) for r in records
+                                 if r["count"] > 60],
                                key=lambda x: -x[1])
+    print "SLANG WORDS LEFT:", len(SLANG_WORD_COUNTS)
 
     # records = db.partial_words.find()
     global PARTIAL_WORDS
