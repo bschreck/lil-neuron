@@ -617,14 +617,15 @@ class RapFeatureExtractor(object):
     def cast_tensors(self, context, sequence):
         casted = {}
         for key, tensor in context.iteritems():
-            casted[key] = tf.cast(tensor, tf.int32)
+            if not key.endswith('shape'):
+                casted[key] = tf.cast(tensor, tf.int32)
 
         for key, tensor in sequence.iteritems():
             ct = tf.cast(tensor, tf.int32)
             if key.endswith('lengths'):
                 casted[key] = ct
-            elif key + ".shape" in casted:
-                shape = casted[key + ".shape"]
+            elif key + ".shape" in context:
+                shape = tf.cast(context[key + ".shape"], tf.int32)
                 casted[key] = tf.reshape(ct, shape)
             else:
                 casted[key] = ct

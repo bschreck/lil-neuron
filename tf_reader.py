@@ -8,24 +8,63 @@ import pdb
 # second dimension is words
 # third dimension is characters or phonemes
 
+# TODO: in future try to have batches be different verses
+
 
 def batched_data_producer(extractor, graph, batch_size, max_num_steps, filename, num_epochs=None, capacity=32, name=None):
     tensor_dict, init_op_local = extractor.read_and_decode_single_example(max_num_steps, from_filename=filename, num_epochs=num_epochs)
-    keys = tensor_dict.keys()
-    values = tensor_dict.values()
-    labels = tensor_dict['labels']
-    queue = tf.PaddingFIFOQueue(capacity=capacity, dtypes=[labels.dtype], shapes=[labels.get_shape()])
-    batch_op = queue.enqueue([labels])
-    batch = queue.dequeue_many(batch_size)
+    keys_to_batch = ['labels', 'phones', 'chars', 'stresses', 'phones.lengths', 'chars.lengths', 'stresses.lengths']
+    to_batch = {k: v for k, v in tensor_dict.iteritems() if k in keys_to_batch}
 
-    queue2 = tf.FIFOQueue(capacity=capacity * batch_size, dtypes=[labels.dtype], shapes=[[batch_size,]])
-    tf.train.add_queue_runner(tf.train.QueueRunner(queue, [batch_op]))
+    verse_length = tensor_dict.pop('verse_length')
+    context_features = [k for k in tensor_dict if k not in keys_to_batch]
+    for c in context_features:
+        multiples = tf.pack([verse_length[0], 1])
+        to_batch[c] = tf.tile(tf.expand_dims(tensor_dict[c], 0),
+                              multiples)
+    batch1 = tf.train.batch(
+        tensors=to_batch,
+        enqueue_many=True,
+        batch_size=max_num_steps,
+        dynamic_pad=True,
+        allow_smaller_final_batch=True,
+        name="num_steps_batch"
+    )
+    batch2 = tf.train.batch(
+        tensors=batch1,
+        enqueue_many=False,
+        batch_size=batch_size,
+        dynamic_pad=True,
+        allow_smaller_final_batch=False,
+        name="batch_size_batch"
+    )
+    init_op_local2 = tf.local_variables_initializer()
+    return batch2, init_op_local, init_op_local2
+    #labels
+    len_queue = tf.FIFOQueue(capacity=capacity * max_num_steps, dtypes=[labels.dtype], shapes=[chars_lengths.get_shape()[1:]])
+    len_verse_op = len_queue.enqueue_many([chars_lengths])
+    tf.train.add_queue_runner(tf.train.QueueRunner(len_queue, [len_verse_op]))
+    len_sequence = len_queue.dequeue_up_to(max_num_steps)
+    len_queue2 = tf.PaddingFIFOQueue(capacity=capacity, dtypes=[labels.dtype], shapes=[[None,]])
+    len_batch_op = len_queue2.enqueue([len_sequence])
+    len_batch = len_queue2.dequeue_many(batch_size)
+    tf.train.add_queue_runner(tf.train.QueueRunner(len_queue2, [len_batch_op]))
 
-    with graph.control_dependencies([batch_op, batch]):
-        verse_first = tf.transpose(batch)
-        batch_op2 = queue2.enqueue_many([verse_first])
-        batch2 = queue2.dequeue_up_to(max_num_steps)
-    tf.train.add_queue_runner(tf.train.QueueRunner(queue2, [batch_op2]))
+    queue = tf.PaddingFIFOQueue(capacity=capacity * max_num_steps, dtypes=[labels.dtype], shapes=[chars.get_shape()[1:]])
+    verse_op = queue.enqueue_many([chars])
+    tf.train.add_queue_runner(tf.train.QueueRunner(queue, [verse_op]))
+    sequence = queue.dequeue_up_to(max_num_steps)
+
+    queue2 = tf.PaddingFIFOQueue(capacity=capacity, dtypes=[labels.dtype], shapes=[[None] + list(chars.get_shape()[1:])])
+
+    batch_op = queue2.enqueue([sequence])
+    batch = queue2.dequeue_many(batch_size)
+    tf.train.add_queue_runner(tf.train.QueueRunner(queue2, [batch_op]))
+
+    # with graph.control_dependencies([batch_op, batch]):
+        # verse_first = tf.transpose(batch)
+        # batch_op2 = queue2.enqueue_many([verse_first])
+        # batch2 = queue2.dequeue_up_to(max_num_steps)
 
     init_op_local2 = tf.local_variables_initializer()
     # TODO: figure out new verse_lengths per example in batch
@@ -50,7 +89,7 @@ def batched_data_producer(extractor, graph, batch_size, max_num_steps, filename,
     # [3, 5] -> 2
     # [0, 0] -> 0
     # verse_length_i_split = min(max_num_steps, max_num_steps - min(max_num_steps, verse_length_index_max - verse_length_i))
-    return batch2, init_op_local, init_op_local2
+    return [len_batch, batch], init_op_local, init_op_local2
 
     to_slice_keys_3d = ["phones", "stresses", "chars"]
     verse_length = tf.shape([batched_data[i] for i in xrange(len(batched_data)) if keys[i] == 'phones'][0])[1]
@@ -120,13 +159,16 @@ def slice_n_input_producer(tensor_list, n=1, shuffle=True, num_epochs=1,
 
 
 def num_batches(extractor, batch_size, max_num_steps, fname):
-    with tf.Graph.as_default() as graph:
+    with tf.Graph().as_default() as graph:
         batched, init_op_local, init_op_local2 = batched_data_producer(extractor, graph, batch_size, max_num_steps, fname, num_epochs=1)
 
-        tf_config = tf.ConfigProto(allow_soft_placement=True)
+        tf_config = tf.ConfigProto(allow_soft_placement=True,
+                                   inter_op_parallelism_threads=20)
+
+        initializer = tf.global_variables_initializer()
         with tf.Session(config=tf_config) as sess:
             # Initialize the the epoch counter
-            sess.run([init_op_local, init_op_local2])
+            sess.run([initializer, init_op_local, init_op_local2])
 
             # Start populating the filename queue.
             coord = tf.train.Coordinator()
@@ -153,8 +195,8 @@ def run_and_return_batches(extractor, num_batches, batch_size, max_num_steps, fn
     with tf.Graph().as_default() as graph:
         batched, init_op_local, init_op_local2 = batched_data_producer(extractor, graph, batch_size, max_num_steps, fname, num_epochs=1)
 
-        tf_config = tf.ConfigProto(allow_soft_placement=True)
-                                   #inter_op_parallelism_threads=20)
+        tf_config = tf.ConfigProto(allow_soft_placement=True,
+                                   inter_op_parallelism_threads=20)
         initializer = tf.global_variables_initializer()
 
         batches = []
@@ -169,21 +211,14 @@ def run_and_return_batches(extractor, num_batches, batch_size, max_num_steps, fn
 
             try:
                 while not coord.should_stop():
-                    # Retrieve a single instance:
-                    print num_batches
                     for i in xrange(num_batches):
-                        print i
                         batch = sess.run(batched)
                         batches.append(batch)
                         num_batches_run += 1
-                        # print i
-                        #print num_batches_run
                     break
             except tf.errors.OutOfRangeError:
-                print "out of range"
                 pass
             finally:
-                # When done, ask the threads to stop.
                 coord.request_stop()
             coord.join(threads)
     return batches
