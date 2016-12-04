@@ -56,7 +56,7 @@ def run_one_epoch(inner_func, extractor, batch_size, max_num_steps, fname):
         tf_config = tf.ConfigProto(allow_soft_placement=True,
                                    inter_op_parallelism_threads=20)
 
-        initializer = tf.initalize_all_variables()
+        initializer = tf.initialize_all_variables()
         with tf.Session(config=tf_config) as sess:
             # Initialize the the epoch counter
             sess.run([initializer, init_op_local, init_op_local2])
