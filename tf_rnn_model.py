@@ -22,7 +22,7 @@ flags = tf.flags
 logging = tf.logging
 
 flags.DEFINE_string(
-    "model", "test",
+    "model", "small",
     "A type of model. Possible options are: small, medium, large.")
 flags.DEFINE_string("train_filename", 'data/tf_train_data_new.txt',
                     "where the training data is stored.")
@@ -34,11 +34,11 @@ flags.DEFINE_string("extractor_config_file", 'data/config_new.p',
                     "Config info for RapFeatureExtractor")
 flags.DEFINE_string("save_path", 'models',
                     "Model output directory.")
-flags.DEFINE_string("device", '/cpu:0',
+flags.DEFINE_string("device", '/gpu:0',
                     "Preferred device.")
 flags.DEFINE_bool("use_fp16", False,
                   "Train using 16-bit floats instead of 32bit floats")
-flags.DEFINE_bool("generate", True,
+flags.DEFINE_bool("generate", False,
                   "If True, generate text instead of training")
 
 FLAGS = flags.FLAGS
