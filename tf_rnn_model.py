@@ -784,7 +784,7 @@ def generate_text(extractor, gen_config, rappers, starter):
                         new_context = -1
                 else:
                     text += " " + word
-                print word
+                print word.encode('utf-8')
                 feats = extractor.update_features(x)
                 input_data.update(feats)
                 if first_time:
@@ -796,7 +796,7 @@ def generate_text(extractor, gen_config, rappers, starter):
                             first_vec = first_vec[np.newaxis, :]
                             input_data[k] = first_vec
                 first_time = False
-    print text
+    print text.encode('utf-8')
     return
 
 
