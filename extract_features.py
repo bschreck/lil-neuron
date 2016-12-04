@@ -420,8 +420,10 @@ class RapFeatureExtractor(object):
             for i, v in enumerate(array):
                 padded[0, i, :len(v)] = v
             actual_input_data[key] = padded
+
         for key, array in context.iteritems():
-            actual_input_data[key] = array[np.newaxis, :]
+            expanded = np.tile(array[np.newaxis, :], [verse_length[0,0], 1])
+            actual_input_data[key] = expanded[np.newaxis, :]
 
         verse_ex = self.make_verse_instance(features, labels, context)
         tensor_dict, init_op_local = self.read_and_decode_single_example(verse_length, from_example=verse_ex)

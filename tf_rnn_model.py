@@ -253,11 +253,9 @@ class ConcatLearn(object):
                 dtype=data_type())
 
 
-            print "softmax_W:", softmax_W
             # Calculate logits and probs
             # Reshape so we can calculate them all at once
             logits_flat = tf.batch_matmul(outputs_flat, softmax_W) + softmax_b
-            print "logits_flat:", logits_flat
 
             # Calculate the losses
             y_flat = tf.reshape(labels, [-1])
@@ -716,7 +714,6 @@ def run_epoch(session, model, eval_op=None, verbose=False):
                   (step * 1.0 / model.input.epoch_size, np.exp(costs / verse_length),
                    iters / (time.time() - start_time)))
 
-    print verse_length
     return np.exp(costs / verse_length)
 
 def generate_text(extractor, gen_config, rappers, starter):
@@ -740,7 +737,6 @@ def generate_text(extractor, gen_config, rappers, starter):
         tf_config = tf.ConfigProto(allow_soft_placement=True,
                                    inter_op_parallelism_threads=20)
         text = ""
-        print tensor_dict
         with sv.managed_session(config=tf_config) as session:
             # Restore variables from disk.
             ckpt = tf.train.get_checkpoint_state(FLAGS.save_path)
@@ -756,6 +752,7 @@ def generate_text(extractor, gen_config, rappers, starter):
 
             end_of_rap = False
             new_context = -1
+            first_time = True
             while not end_of_rap:
                 feed_dict = {}
                 for i, s in enumerate(m.initial_state):
@@ -771,7 +768,6 @@ def generate_text(extractor, gen_config, rappers, starter):
                 x = sample(output_probs[-1], 0.9)
                 if new_context > -1:
                     rap_vectors = extractor.update_rap_vectors(x, new_context)
-                    print [v.shape for v in rap_vectors.values()]
                     input_data.update(rap_vectors)
 
                 word = get_word(x)
@@ -791,6 +787,15 @@ def generate_text(extractor, gen_config, rappers, starter):
                 print word
                 feats = extractor.update_features(x)
                 input_data.update(feats)
+                if first_time:
+                    # only include first context vector
+                    # since we now only have verses of length 1
+                    for k, v in input_data.iteritems():
+                        if k.startswith("rapper"):
+                            first_vec = v[:, 0, :]
+                            first_vec = first_vec[np.newaxis, :]
+                            input_data[k] = first_vec
+                first_time = False
     print text
     return
 
