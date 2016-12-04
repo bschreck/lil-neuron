@@ -50,6 +50,8 @@ def run_and_return_batches(extractor, num_batches, batch_size, max_num_steps, fn
 
 
 def run_one_epoch(inner_func, extractor, batch_size, max_num_steps, fname):
+    print "batch_size:", batch_size
+    print "max_num_steps:", max_num_steps
     with tf.Graph().as_default():
         batched, init_op_local, init_op_local2 = batched_data_producer(extractor, batch_size, max_num_steps, fname, num_epochs=1)
 
