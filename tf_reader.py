@@ -6,17 +6,8 @@ import pdb
 # TODO: in future try to have batches be different verses
 def batched_data_producer(extractor, batch_size, max_num_steps, filename, num_epochs=None, capacity=32, name=None):
     tensor_dict, init_op_local = extractor.read_and_decode_single_example(max_num_steps, from_filename=filename, num_epochs=num_epochs)
-    keys_to_batch = ['labels', 'phones', 'chars', 'stresses', 'phones.lengths', 'chars.lengths', 'stresses.lengths']
-    to_batch = {k: v for k, v in tensor_dict.iteritems() if k in keys_to_batch}
-
-    verse_length = tensor_dict.pop('verse_length')
-    context_features = [k for k in tensor_dict if k not in keys_to_batch]
-    for c in context_features:
-        multiples = tf.pack([verse_length[0], 1])
-        to_batch[c] = tf.tile(tf.expand_dims(tensor_dict[c], 0),
-                              multiples)
     batch1 = tf.train.batch(
-        tensors=to_batch,
+        tensors=tensor_dict,
         enqueue_many=True,
         batch_size=max_num_steps,
         dynamic_pad=True,

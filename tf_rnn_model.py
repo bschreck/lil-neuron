@@ -38,7 +38,7 @@ flags.DEFINE_string("device", '/cpu:0',
                     "Preferred device.")
 flags.DEFINE_bool("use_fp16", False,
                   "Train using 16-bit floats instead of 32bit floats")
-flags.DEFINE_bool("generate", False,
+flags.DEFINE_bool("generate", True,
                   "If True, generate text instead of training")
 
 FLAGS = flags.FLAGS
@@ -56,10 +56,9 @@ class LNInput(object):
         self.batch_size = config.batch_size
         self.max_num_steps = config.max_num_steps
         self.filename = filename
-        sample_batches = reader.run_and_return_batches(extractor, 2, self.batch_size, 100, self.filename)
-        pdb.set_trace()
         self._epoch_size = reader.num_batches(extractor, self.batch_size, self.max_num_steps, self.filename)
         self.input_data, _, _ = reader.batched_data_producer(self.extractor, self.batch_size, self.max_num_steps, self.filename, name=name)
+        self.verse_length = self.input_data["labels"].get_shape()[:1]
 
     @property
     def epoch_size(self):
@@ -76,6 +75,7 @@ class GeneratorInput(object):
         self.extractor = extractor
         self.batch_size = config.batch_size
         self.input_data = input_data
+        self.verse_length = input_data["labels"].get_shape()[:1]
         self._epoch_size = 1
 
     @property
@@ -179,6 +179,7 @@ class RNNPath(object):
                 both_states_expanded = tf.nn.dropout(both_states_expanded, config.keep_prob)
 
             verse_lengths = tf.reshape(verse_lengths, [-1])
+            verse_lengths = tf.tile(verse_lengths, [batch_size])
             outputs, last_states = tf.nn.dynamic_rnn(cell=word_level_cell,
                                                      dtype=data_type(),
                                                      sequence_length=verse_lengths,
@@ -218,19 +219,21 @@ class ConcatLearn(object):
             # separate batch dimension into lists
             # rnn_paths * [batch_size, verse_len, output_size]
             outputs = [tf.reshape(path.outputs, [-1, path.output_size]) for path in self.rnn_paths]
+            context_output = tf.reshape(self.context_network.outputs, [-1, self.context_network.output_size])
+            outputs.append(context_output)
             # rnn_paths * [batch_size * verse_len, output_size]
-            outputs = tf.concat(1, outputs)
+            outputs_flat = tf.concat(1, outputs)
             # (batch_size * verse_len) * [sum(output_sizes)]
 
-            # TODO: I think the large memoery issue has to do with tiling here, which seems stupid
-            # need to check on how to do this without reshaping along verse_len
-            # [batch_size, ffp.output_size]
-            context_tiled = tf.tile(self.context_network.output, tf.pack([verse_len, 1]))
-            # (batch_size * verse_len) *[ffp.output_size]
-            outputs_flat = tf.concat(1, [context_tiled, outputs])
-            # batch_size * [feed_forward * verse_len * sum(output_sizes)])
+            # # TODO: I think the large memoery issue has to do with tiling here, which seems stupid
+            # # need to check on how to do this without reshaping along verse_len
+            # # [batch_size, ffp.output_size]
+            # context_tiled = tf.tile(self.context_network.output, tf.pack([verse_len, 1]))
+            # # (batch_size * verse_len) *[ffp.output_size]
+            # outputs_flat = tf.concat(1, [context_tiled, outputs])
+            # # batch_size * [feed_forward * verse_len * sum(output_sizes)])
             final_unit_size = sum([path.output_size for path in self.rnn_paths]) + self.context_network.output_size
-            print "final_unit_size:", final_unit_size
+            # print "final_unit_size:", final_unit_size
             # # one more dense layer to shrink size
             # final_dense_W = tf.get_variable("final_dense",
                 # initializer=tf.random_normal_initializer(),
@@ -238,7 +241,7 @@ class ConcatLearn(object):
                 # dtype=data_type())
             # final_dense_b = tf.get_variable("final_dense_b", [config.final_dense_size], dtype=data_type())
 
-            #Jkfinal_dense_out = tf.batch_matmul(outputs_flat, final_dense_W) + final_dense_b
+            # final_dense_out = tf.batch_matmul(outputs_flat, final_dense_W) + final_dense_b
             # final softmax layer
             # Output layer weights
             softmax_b = tf.get_variable("softmax_b", [config.vocab_size], dtype=data_type())
@@ -305,11 +308,11 @@ class ConcatLearn(object):
 
     @property
     def initial_state(self):
-        return [s for path in self.rnn_paths for s in path.initial_states]
+        return [s for path in self.rnn_paths for s in path.initial_states] + [self.context_network.initial_states]
 
     @property
     def final_state(self):
-        return [s for path in self.rnn_paths for s in path.final_states]
+        return [s for path in self.rnn_paths for s in path.final_states] + [self.context_network.final_states]
 
     @property
     def cost(self):
@@ -325,27 +328,71 @@ class ConcatLearn(object):
 
 
 class ContextNetwork(object):
-    def __init__(self, is_training, input_data, input_size, config,
-                 device=FLAGS.device):
+    def __init__(self, is_training, input_data, input_size, verse_lengths,
+                 config, device=FLAGS.device):
+        self.is_training = is_training
         self.input_data= input_data
         self.paths = []
-        self.final_size = config.feed_forward_final_size
-        for i, rapper in enumerate(input_data):
-            with tf.variable_scope("ContextRapper{}".format(i)):
-                path = FeedForwardPath(is_training, rapper, input_size, config,
-                                       device=device)
-                self.paths.append(path)
-        path_outputs = [p.output for p in self.paths]
+        self.verse_lengths = verse_lengths
+        self.batch_size = config.batch_size
+        self.keep_prob = config.keep_prob
+        self.size = config.hidden_context_size
+
+        all_rappers = tf.concat(2, input_data)
+
+        name = "DenseLayer"
+        input_shape = tf.shape(input_data[0])
+        tensor_verse_len = input_shape[1]
+        new_shape = tf.pack([self.batch_size * tensor_verse_len, len(input_data) * input_size])
+        layer_input = tf.reshape(all_rappers, new_shape, name="PreDenseReshape")
+        layer_input = tf.cast(layer_input, data_type())
+        layer_output = self.layer(layer_input, len(input_data) * input_size, self.size, name=name,
+                                 device=device)
+        new_shape = tf.pack([self.batch_size, tensor_verse_len, self.size])
+        rnn_input = tf.reshape(layer_output, new_shape, name="PostDenseReshape")
+
+        self.size = config.hidden_context_size
 
         with tf.device(device):
-            concat = tf.concat(1, path_outputs)
-        last_input_size = self.paths[0].output_size * self.num_paths
-        self.last_layer = self.paths[0].layer(concat, last_input_size,
-                                              self.final_size, name='ConcatLayer')
+            # Can experiment with different settings
+            lstm_args = dict(use_peepholes=False,
+                             cell_clip=None,
+                             initializer=None,
+                             num_proj=None,
+                             proj_clip=None,
+                             num_unit_shards=1,
+                             num_proj_shards=1,
+                             forget_bias=1.0,
+                             state_is_tuple=True)
+            cell = tf.nn.rnn_cell.LSTMCell(self.size, **lstm_args)
+
+            if is_training and config.keep_prob < 1:
+                cell = tf.nn.rnn_cell.DropoutWrapper(cell,
+                                                     output_keep_prob=config.keep_prob)
+            cell = tf.nn.rnn_cell.MultiRNNCell([cell] * config.num_context_layers, state_is_tuple=True)
+            self._initial_states = cell.zero_state(self.batch_size, data_type())
+
+
+            verse_lengths = tf.reshape(verse_lengths, [-1])
+            verse_lengths = tf.tile(verse_lengths, [self.batch_size])
+            outputs, last_states = tf.nn.dynamic_rnn(cell=cell,
+                                                     dtype=data_type(),
+                                                     sequence_length=verse_lengths,
+                                                     inputs=rnn_input)
+        self._final_states = last_states
+        self._outputs = outputs
 
     @property
-    def output(self):
-        return self.last_layer
+    def initial_states(self):
+        return self._initial_states
+
+    @property
+    def final_states(self):
+        return self._final_states
+
+    @property
+    def outputs(self):
+        return self._outputs
 
     @property
     def num_paths(self):
@@ -353,7 +400,30 @@ class ContextNetwork(object):
 
     @property
     def output_size(self):
-        return self.final_size
+        return self.size
+
+    def layer(self, input_data, input_size, size, name='layer',
+              device=FLAGS.device):
+        with tf.variable_scope(name), tf.device(device):
+            W = self.weight_variable([input_size, size])
+            b = self.bias_variable([size])
+            layer = tf.nn.relu(tf.matmul(input_data, W) + b)
+            if self.is_training and self.keep_prob < 1:
+                layer = tf.nn.dropout(layer, self.keep_prob)
+        return layer
+
+    def weight_variable(self, shape):
+        initial = tf.truncated_normal(shape, stddev=0.1)
+        W = tf.get_variable(
+            name="W",
+            initializer=initial,
+            dtype=data_type())
+        return W
+
+    def bias_variable(self, shape):
+        initial = tf.constant(0.1, shape=shape)
+        b = tf.get_variable('b', initializer=initial, dtype=data_type())
+        return b
 
 
 class FeedForwardPath(object):
@@ -405,12 +475,12 @@ class FeedForwardPath(object):
 class FullLNModel(object):
     def __init__(self, is_training, config, input_, device=FLAGS.device):
         self.input_ = input_
+        self.config = config
         num_rappers = config.num_rappers
         rappers = []
         for r in xrange(num_rappers):
             rappers.append(input_["rapper" + str(r)])
 
-        self.verse_lengths = input_.verse_length
         labels = input_.labels
         feat_names = ['chars', 'phones', 'stresses']
         feats = [input_[f] for f in feat_names]
@@ -420,7 +490,7 @@ class FullLNModel(object):
             lengths = self.seq_lengths[i]
             rnn_input = RNNInput(feature=feat,
                                  word_lengths=lengths,
-                                 verse_lengths=self.verse_lengths)
+                                 verse_lengths=self.verse_length)
             with tf.variable_scope("RNNPath_{}".format(feat_names[i])):
                 rnn_path = RNNPath(is_training=is_training,
                                    input_=rnn_input,
@@ -432,6 +502,7 @@ class FullLNModel(object):
             context_network = ContextNetwork(is_training,
                                              input_data=rappers,
                                              input_size=config.rap_vec_size,
+                                             verse_lengths=self.verse_length,
                                              config=config,
                                              device=device)
 
@@ -440,9 +511,17 @@ class FullLNModel(object):
                                             labels=labels,
                                             rnn_paths=rnn_paths,
                                             context_network=context_network,
-                                            verse_lengths=self.verse_lengths,
+                                            verse_lengths=self.verse_length,
                                             config=config,
                                             device=device)
+
+    @property
+    def batch_size(self):
+        return self.config.batch_size
+
+    @property
+    def verse_length(self):
+        return self.input_.verse_length
 
     @property
     def input_tensors(self):
@@ -500,8 +579,10 @@ class SmallConfig(Config):
     max_grad_norm = 5
     num_word_layers = 2
     num_char_layers = 1
+    num_context_layers = 1
     max_num_steps = 20
     hidden_size = 200
+    hidden_context_size = 25
     max_epoch = 4
     max_max_epoch = 13
     keep_prob = 1.0
@@ -519,8 +600,10 @@ class MediumConfig(Config):
     max_grad_norm = 5
     num_word_layers = 2
     num_char_layers = 1
+    num_context_layers = 1
     max_num_steps = 35
     hidden_size = 650
+    hidden_context_size = 50
     max_epoch = 6
     max_max_epoch = 39
     keep_prob = 0.5
@@ -538,8 +621,10 @@ class LargeConfig(Config):
     max_grad_norm = 10
     num_word_layers = 2
     num_char_layers = 1
+    num_context_layers = 2
     max_num_steps = 35
     hidden_size = 1500
+    hidden_context_size = 100
     max_epoch = 14
     max_max_epoch = 55
     keep_prob = 0.35
@@ -557,8 +642,10 @@ class TestConfig(Config):
     max_grad_norm = 1
     num_word_layers = 2
     num_char_layers = 2
+    num_context_layers = 1
     max_num_steps = 2
     hidden_size = 2
+    hidden_context_size = 2
     max_epoch = 1
     max_max_epoch = 1
     keep_prob = 1.0
@@ -603,7 +690,6 @@ def run_epoch(session, model, eval_op=None, verbose=False):
     fetches = {
         "cost": model.cost,
         "final_state": model.final_state,
-        "verse_lengths": model.verse_lengths,
     }
     if eval_op is not None:
         fetches["eval_op"] = eval_op
@@ -618,20 +704,20 @@ def run_epoch(session, model, eval_op=None, verbose=False):
         vals = session.run(fetches, feed_dict)
         cost = vals["cost"]
         state = vals["final_state"]
-        verse_lengths = vals["verse_lengths"]
+        verse_length = model.verse_length.as_list()[0]
 
         costs += cost
-        iters += verse_lengths.sum()
-        avg_batch_iters = verse_lengths.mean()
+        iters += verse_length * model.batch_size
 
         every10 = model.input.epoch_size // 10
         print_output = (every10 == 0 or step % every10 == 10)
         if verbose and print_output:
             print("%.3f perplexity: %.3f speed: %.0f wps" %
-                  (step * 1.0 / model.input.epoch_size, np.exp(costs / avg_batch_iters),
+                  (step * 1.0 / model.input.epoch_size, np.exp(costs / verse_length),
                    iters / (time.time() - start_time)))
 
-    return np.exp(costs / avg_batch_iters)
+    print verse_length
+    return np.exp(costs / verse_length)
 
 def generate_text(extractor, gen_config, rappers, starter):
     with tf.Graph().as_default():
@@ -650,23 +736,24 @@ def generate_text(extractor, gen_config, rappers, starter):
             with tf.variable_scope("Model", reuse=None, initializer=initializer):
                 m = FullLNModel(is_training=False, config=gen_config,
                                 input_=gen_input)
-
         sv = tf.train.Supervisor(logdir=FLAGS.save_path)
-        tf_config = tf.ConfigProto(allow_soft_placement=True)
+        tf_config = tf.ConfigProto(allow_soft_placement=True,
+                                   inter_op_parallelism_threads=20)
+        text = ""
+        print tensor_dict
         with sv.managed_session(config=tf_config) as session:
             # Restore variables from disk.
             ckpt = tf.train.get_checkpoint_state(FLAGS.save_path)
             if ckpt and ckpt.model_checkpoint_path:
                 sv.saver.restore(session, ckpt.model_checkpoint_path)
-            #sv.saver.restore(session, FLAGS.save_path)
-            print "Model restored from file " + FLAGS.save_path
+                print "Model restored from file " + FLAGS.save_path
+            else:
+                raise Exception("Model ckpt not found")
 
             state = session.run(m.initial_state)
 
-            #session.run(init_op_local)
             get_word = extractor.get_word_from_int
 
-            text = ""
             end_of_rap = False
             new_context = -1
             while not end_of_rap:
@@ -684,6 +771,7 @@ def generate_text(extractor, gen_config, rappers, starter):
                 x = sample(output_probs[-1], 0.9)
                 if new_context > -1:
                     rap_vectors = extractor.update_rap_vectors(x, new_context)
+                    print [v.shape for v in rap_vectors.values()]
                     input_data.update(rap_vectors)
 
                 word = get_word(x)
@@ -763,10 +851,12 @@ def main(_):
             print "initializing test model:"
             test_ln_input = LNInput(extractor=extractor, config=eval_gen_config, filename=test_filename, name="TestInput")
             with tf.variable_scope("Model", reuse=True, initializer=initializer):
-                mtest = FullLNModel(is_training=False, config=eval_gen_config, input_=test_ln_input)
+                mtest = FullLNModel(is_training=False, config=eval_gen_config,
+                                    input_=test_ln_input)
 
         sv = tf.train.Supervisor(logdir=FLAGS.save_path)
-        tf_config = tf.ConfigProto(allow_soft_placement=True)
+        tf_config = tf.ConfigProto(allow_soft_placement=True,
+                                   inter_op_parallelism_threads=20)
         with sv.managed_session(config=tf_config) as session:
             for i in range(config.max_max_epoch):
                 lr_decay = config.lr_decay ** max(i + 1 - config.max_epoch, 0.0)

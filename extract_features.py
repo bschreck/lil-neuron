@@ -433,12 +433,12 @@ class RapFeatureExtractor(object):
     def update_rap_vectors(self, rap_sym, position):
         # add batch of 1
         input_data = {}
-        zero_vec = np.zeros((1, self.len_rapper_vector))
+        zero_vec = np.zeros((1, 1, self.len_rapper_vector))
         if rap_sym in self.sym2char:
             rapper = self.sym2char[rap_sym]
             if rapper in self.rapper_vectors:
                 # add batch of 1
-                rap_vec = self.rapper_vectors[rapper][np.newaxis, :]
+                rap_vec = self.rapper_vectors[rapper][np.newaxis, np.newaxis, :]
                 input_data["rapper"+str(position)] = rap_vec
                 # reset rest of rappers
                 for pos in xrange(position + 1, self.max_nrps):
@@ -457,25 +457,25 @@ class RapFeatureExtractor(object):
             char_feat = np.array([[[self.special_char_symbols[word]]]])
             input_data["chars"] = char_feat
             input_data["chars.lengths"] = np.array([[1]])
-            input_data["chars.shape"] = np.array([[1, 1]])
+            #input_data["chars.shape"] = np.array([[1, 1]])
             input_data["phones"] = char_feat
             input_data["phones.lengths"] = np.array([[1]])
-            input_data["phones.shape"] = np.array([[1, 1]])
+            #input_data["phones.shape"] = np.array([[1, 1]])
             input_data["stresses"] = char_feat
             input_data["stresses.lengths"] = np.array([[1]])
-            input_data["stresses.shape"] = np.array([[1, 1]])
+            #input_data["stresses.shape"] = np.array([[1, 1]])
         else:
             chars = [self.char2sym[c] for c in word]
             phones, stresses = self._extract_phones(sym)
             input_data["chars"] = np.array([[chars]])
             input_data["chars.lengths"] = np.array([[len(chars)]])
-            input_data["chars.shape"] = np.array([[1, len(chars)]])
+            #input_data["chars.shape"] = np.array([[1, len(chars)]])
             input_data["phones"] = np.array([[phones]])
             input_data["phones.lengths"] = np.array([[len(phones)]])
-            input_data["phones.shape"] = np.array([[1, len(phones)]])
+            #input_data["phones.shape"] = np.array([[1, len(phones)]])
             input_data["stresses"] = np.array([[stresses]])
             input_data["stresses.lengths"] = np.array([[len(stresses)]])
-            input_data["stresses.shape"] = np.array([[1, len(stresses)]])
+            #input_data["stresses.shape"] = np.array([[1, len(stresses)]])
         input_data["verse_length"] = np.array([[1]])
         input_data["labels"] = np.array([[sym]])
         return input_data
@@ -589,9 +589,17 @@ class RapFeatureExtractor(object):
 
         casted_tensors = self.cast_tensors(context_parsed, sequence_parsed)
 
+        to_batch = {k: v for k, v in casted_tensors.iteritems() if k in sequence_features}
+
+        verse_length = casted_tensors.pop('verse_length')
+        context_features = [k for k in casted_tensors if k not in sequence_features]
+        for c in context_features:
+            multiples = tf.pack([verse_length[0], 1])
+            to_batch[c] = tf.tile(tf.expand_dims(casted_tensors[c], 0),
+                                  multiples)
 
         init_op_local = tf.local_variables_initializer()
-        return casted_tensors, init_op_local
+        return to_batch, init_op_local
 
         # num_split = tf.ceil(length / max_num_steps)
 
