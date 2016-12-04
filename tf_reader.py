@@ -22,7 +22,7 @@ def batched_data_producer(extractor, batch_size, max_num_steps, filename, num_ep
         allow_smaller_final_batch=False,
         name="batch_size_batch"
     )
-    init_op_local2 = tf.local_variables_initializer()
+    init_op_local2 = tf.initialize_local_variables()
     return batch2, init_op_local, init_op_local2
 
 
@@ -56,7 +56,7 @@ def run_one_epoch(inner_func, extractor, batch_size, max_num_steps, fname):
         tf_config = tf.ConfigProto(allow_soft_placement=True,
                                    inter_op_parallelism_threads=20)
 
-        initializer = tf.global_variables_initializer()
+        initializer = tf.initalize_all_variables()
         with tf.Session(config=tf_config) as sess:
             # Initialize the the epoch counter
             sess.run([initializer, init_op_local, init_op_local2])

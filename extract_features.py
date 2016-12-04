@@ -600,7 +600,7 @@ class RapFeatureExtractor(object):
             to_batch[c] = tf.tile(tf.expand_dims(casted_tensors[c], 0),
                                   multiples)
 
-        init_op_local = tf.local_variables_initializer()
+        init_op_local = tf.initialize_local_variables()
         return to_batch, init_op_local
 
         # num_split = tf.ceil(length / max_num_steps)
@@ -674,8 +674,8 @@ class RapFeatureExtractor(object):
 
 
 if __name__ == '__main__':
-    #filenames = all_filenames("data/lyric_files/Tyler, The Creator")
-    filenames = all_filenames("data/lyric_files")
+    filenames = all_filenames("data/lyric_files/Tyler, The Creator")
+    #filenames = all_filenames("data/lyric_files")
     train_ratio = .7
     valid_ratio = .2
     train_indices = np.random.choice(np.arange(len(filenames)),
@@ -695,9 +695,9 @@ if __name__ == '__main__':
     print len(train_filenames)
     print len(valid_filenames)
     print len(test_filenames)
-    extractor = RapFeatureExtractor(train_filenames=train_filenames[:1],
-                                    valid_filenames=valid_filenames[:1],
-                                    test_filenames=test_filenames[:1],
+    extractor = RapFeatureExtractor(train_filenames=train_filenames,
+                                    valid_filenames=valid_filenames,
+                                    test_filenames=test_filenames,
                                     from_config=False,
                                     config_file='data/config_new.p')
     extractor.save_tf_record_files(train_file="data/tf_train_data_new.txt",
