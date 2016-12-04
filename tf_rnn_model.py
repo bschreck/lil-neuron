@@ -57,6 +57,8 @@ class LNInput(object):
         self.max_num_steps = config.max_num_steps
         self.filename = filename
         self._epoch_size = reader.num_batches(extractor, self.batch_size, self.max_num_steps, self.filename)
+        print "epoch size:", self._epoch_size
+        return
         self.input_data, _, _ = reader.batched_data_producer(self.extractor, self.batch_size, self.max_num_steps, self.filename, name=name)
         self.verse_length = self.input_data["labels"].get_shape()[:1]
 
@@ -850,6 +852,7 @@ def main(argv):
                                                     config.init_scale)
         with tf.name_scope("Train"):
             train_ln_input = LNInput(extractor=extractor, config=config, filename=train_filename, name="TrainInput")
+            return
             print "initializing training model:"
             with tf.variable_scope("Model", reuse=None, initializer=initializer):
                 m = FullLNModel(is_training=True, config=config, input_=train_ln_input)

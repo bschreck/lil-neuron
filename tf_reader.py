@@ -71,6 +71,7 @@ def run_one_epoch(inner_func, extractor, batch_size, max_num_steps, fname):
                     b = sess.run(batched)
                     print "ran a batch"
                     res, should_stop = inner_func(b, res)
+                    print "res:", res
                     if should_stop:
                         break
                 print "done"
@@ -83,6 +84,7 @@ def run_one_epoch(inner_func, extractor, batch_size, max_num_steps, fname):
 
             # Wait for threads to finish.
             coord.join(threads)
+        print "res:", res
         return res
 
 
