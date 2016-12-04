@@ -10,6 +10,7 @@ Pronunciation features:
 import numpy as np
 import cPickle as pickle
 import pdb
+import sys
 import gzip
 import tensorflow as tf
 import string
@@ -497,7 +498,9 @@ class RapFeatureExtractor(object):
         else:
             filenames = self.test_filenames
 
-        for f in filenames:
+        for i, f in enumerate(filenames):
+            print "Working on {}. {}".format(i, f)
+            sys.stdout.flush()
             for verse in self._load_file_verses(f):
                 yield verse
 
@@ -674,8 +677,8 @@ class RapFeatureExtractor(object):
 
 
 if __name__ == '__main__':
-    filenames = all_filenames("data/lyric_files/Tyler, The Creator")
-    #filenames = all_filenames("data/lyric_files")
+    #filenames = all_filenames("data/lyric_files/Tyler, The Creator")
+    filenames = all_filenames("data/lyric_files")
     train_ratio = .7
     valid_ratio = .2
     train_indices = np.random.choice(np.arange(len(filenames)),
@@ -699,7 +702,7 @@ if __name__ == '__main__':
                                     valid_filenames=valid_filenames,
                                     test_filenames=test_filenames,
                                     from_config=False,
-                                    config_file='data/config_new.p')
-    extractor.save_tf_record_files(train_file="data/tf_train_data_new.txt",
-                                   valid_file="data/tf_valid_data_new.txt",
-                                   test_file="data/tf_test_data_new.txt")
+                                    config_file='data/config_full.p')
+    extractor.save_tf_record_files(train_file="data/tf_train_data_full.txt",
+                                   valid_file="data/tf_valid_data_full.txt",
+                                   test_file="data/tf_test_data_full.txt")

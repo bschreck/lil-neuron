@@ -81,7 +81,8 @@ def all_filenames(dirname):
     filenames = []
     for root, dirs, files in os.walk(dirname):
         for file in files:
-            filenames.append(os.path.join(root, file))
+            if file.endswith(".txt"):
+                filenames.append(os.path.join(root, file))
     return filenames
 
 def _word_numbers(num):

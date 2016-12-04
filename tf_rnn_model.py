@@ -814,7 +814,16 @@ def sample(a, temperature=1.0):
     return len(a) - 1
 
 
-def main(_):
+def main(argv):
+
+    if len(argv) > 1:
+        FLAGS.model = argv[1]
+
+    if len(argv) > 2 and argv[2].startswith('g'):
+        FLAGS.generate = True
+    else:
+        FLAGS.generate = False
+
     extractor = RapFeatureExtractor(train_filenames=[],
                                     valid_filenames=[],
                                     from_config=True,
