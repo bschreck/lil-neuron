@@ -69,10 +69,13 @@ def run_one_epoch(inner_func, extractor, batch_size, max_num_steps, fname):
                 while not coord.should_stop():
                     # Retrieve a single instance:
                     b = sess.run(batched)
+                    print "ran a batch"
                     res, should_stop = inner_func(b, res)
                     if should_stop:
                         break
+                print "done"
             except tf.errors.OutOfRangeError:
+                print "out of range"
                 pass
             finally:
                 # When done, ask the threads to stop.
