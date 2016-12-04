@@ -14,7 +14,6 @@ import sys
 import gzip
 import tensorflow as tf
 import string
-import copy
 try:
     from generate_lyric_files import all_filenames
     from pymongo import MongoClient
@@ -87,7 +86,9 @@ class RapFeatureExtractor(object):
             self.get_char_sym(name)
             self.get_phone_sym(name)
             self.get_stress_sym(name)
-            self.get_word_sym(name)
+            sym = self.get_word_sym(name)
+            # TODO: include rapper name's pronunciation
+            self.word_int_to_pron[sym] = []
         for c in chars_in_rappers:
             self.get_char_sym(c)
         self.rapper_vectors = rap_vecs
@@ -129,6 +130,7 @@ class RapFeatureExtractor(object):
         special_symbols = ['<eos>', '<eov>', '<nrp>', '<eor>', '<unk>']
         for s in special_symbols:
             word_sym = self.get_word_sym(s)
+            self.word_int_to_pron[word_sym] = []
             char_sym = self.get_char_sym(s)
             self.get_phone_sym(s)
             self.get_stress_sym(s)
@@ -679,8 +681,8 @@ class RapFeatureExtractor(object):
 if __name__ == '__main__':
     #filenames = all_filenames("data/lyric_files/Tyler, The Creator")
     filenames = all_filenames("data/lyric_files")
-    train_ratio = .7
-    valid_ratio = .2
+    train_ratio = .9
+    valid_ratio = .05
     train_indices = np.random.choice(np.arange(len(filenames)),
                                      replace=False,
                                      size=int(len(filenames)*train_ratio))

@@ -9,14 +9,13 @@ from extract_features import RapFeatureExtractor
 
 import pdb
 
-# Use dynamic_rnn()
-# dynamically pad batches using tf.train.batch
-# dynamic_rnn allows for a changing batch_size, so my batch_size can be the length of the verse
-# input sequence_length of non-padded lengths of each sentence/line
+# TODO: change hidden size of each RNN path separately
+# Use ADAM optimizer
+# Add in pronunciation of rappers
+# Start with GlovE or Word2Vec vectors
+# Learn word vectors using bidirectional rnn with a single layer of word-level
+# Freeze these vectors and train using 3 levels of word-level
 
-# multiple dynamic_rnn's for each sequence feature
-# normal NN's for each context feature
-# combine them and score
 
 flags = tf.flags
 logging = tf.logging
@@ -226,13 +225,6 @@ class ConcatLearn(object):
             outputs_flat = tf.concat(1, outputs)
             # (batch_size * verse_len) * [sum(output_sizes)]
 
-            # # TODO: I think the large memoery issue has to do with tiling here, which seems stupid
-            # # need to check on how to do this without reshaping along verse_len
-            # # [batch_size, ffp.output_size]
-            # context_tiled = tf.tile(self.context_network.output, tf.pack([verse_len, 1]))
-            # # (batch_size * verse_len) *[ffp.output_size]
-            # outputs_flat = tf.concat(1, [context_tiled, outputs])
-            # # batch_size * [feed_forward * verse_len * sum(output_sizes)])
             final_unit_size = sum([path.output_size for path in self.rnn_paths]) + self.context_network.output_size
             # print "final_unit_size:", final_unit_size
             # # one more dense layer to shrink size
