@@ -50,8 +50,6 @@ def run_and_return_batches(extractor, num_batches, batch_size, max_num_steps, fn
 
 
 def run_one_epoch(inner_func, extractor, batch_size, max_num_steps, fname):
-    print "batch_size:", batch_size
-    print "max_num_steps:", max_num_steps
     with tf.Graph().as_default():
         batched, init_op_local, init_op_local2 = batched_data_producer(extractor, batch_size, max_num_steps, fname, num_epochs=1)
 
@@ -71,14 +69,10 @@ def run_one_epoch(inner_func, extractor, batch_size, max_num_steps, fname):
                 while not coord.should_stop():
                     # Retrieve a single instance:
                     b = sess.run(batched)
-                    print "ran a batch"
                     res, should_stop = inner_func(b, res)
-                    print "res:", res
                     if should_stop:
                         break
-                print "done"
             except tf.errors.OutOfRangeError:
-                print "out of range"
                 pass
             finally:
                 # When done, ask the threads to stop.
@@ -86,7 +80,6 @@ def run_one_epoch(inner_func, extractor, batch_size, max_num_steps, fname):
 
             # Wait for threads to finish.
             coord.join(threads)
-        print "res:", res
         return res
 
 
@@ -97,6 +90,6 @@ if __name__ == '__main__':
                                     config_file='data/config_new.p')
     batch_size = 2
     max_num_steps = 100
-    fname = 'data/tf_train_data_new.txt'
+    fname = 'data/tf_train_data.txt'
     batches = run_and_return_batches(extractor, 100, batch_size, max_num_steps, fname)
     pdb.set_trace()

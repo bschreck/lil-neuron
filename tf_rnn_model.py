@@ -24,13 +24,13 @@ logging = tf.logging
 flags.DEFINE_string(
     "model", "small",
     "A type of model. Possible options are: small, medium, large.")
-flags.DEFINE_string("train_filename", 'data/tf_train_data_new.txt',
+flags.DEFINE_string("train_filename", 'data/tf_train_data.txt',
                     "where the training data is stored.")
-flags.DEFINE_string("valid_filename", 'data/tf_valid_data_new.txt',
+flags.DEFINE_string("valid_filename", 'data/tf_valid_data.txt',
                     "where the validation data is stored.")
-flags.DEFINE_string("test_filename", 'data/tf_test_data_new.txt',
+flags.DEFINE_string("test_filename", 'data/tf_test_data.txt',
                     "where the test data is stored.")
-flags.DEFINE_string("extractor_config_file", 'data/config_new.p',
+flags.DEFINE_string("extractor_config_file", 'data/config.p',
                     "Config info for RapFeatureExtractor")
 flags.DEFINE_string("save_path", 'models',
                     "Model output directory.")
@@ -58,7 +58,6 @@ class LNInput(object):
         self.filename = filename
         self._epoch_size = reader.num_batches(extractor, self.batch_size, self.max_num_steps, self.filename)
         print "epoch size:", self._epoch_size
-        return
         self.input_data, _, _ = reader.batched_data_producer(self.extractor, self.batch_size, self.max_num_steps, self.filename, name=name)
         self.verse_length = self.input_data["labels"].get_shape()[:1]
 
@@ -852,7 +851,6 @@ def main(argv):
                                                     config.init_scale)
         with tf.name_scope("Train"):
             train_ln_input = LNInput(extractor=extractor, config=config, filename=train_filename, name="TrainInput")
-            return
             print "initializing training model:"
             with tf.variable_scope("Model", reuse=None, initializer=initializer):
                 m = FullLNModel(is_training=True, config=config, input_=train_ln_input)
