@@ -16,6 +16,20 @@ import pdb
 # Learn word vectors using bidirectional rnn with a single layer of word-level
 # Freeze these vectors and train using 3 levels of word-level
 
+# HOW TO START WITH WORD VECTORS
+# get full google news corpus (or other corpus, look into what GloVe is trained on)
+# add in my rap corpus, which includes slang words
+# retrain to produce vectors for all words in my corpus
+
+# Use standard embedding (not bidirectional rnn) for word vectors, using double layer of word-level
+# Freeze these and then use triple level
+# Try both bidirectional and standard embedding for pronunciations, and experiment with freezing them as well
+
+# Try to generate embeddings for both pronunciations and words simultaneiously, then freeze them both
+# Either remove stresses, add them back in to the original pronunciations,
+# or encode each pronuncation as a tuple of (phone, stress) into the same RNN
+# make sure this happens from extract_features
+
 
 flags = tf.flags
 logging = tf.logging
