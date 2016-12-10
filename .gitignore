@@ -3,3 +3,13 @@ node_modules
 *.p
 data/lyric_files
 dump
+.DS_Store
+checkpoint
+*.out
+*.deb
+*.zip
+*.txt
+*.pem
+models
+*.pyc
+*.tgz
