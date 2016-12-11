@@ -75,3 +75,10 @@ Generating Model:
  1. Come up with the first few phrases
  2. Run the trained model without backprop to generate the rest of the
     song. Model stops at end-of-song symbol
+
+# To Tokenize Corpus
+
+Ensure you set the CLASSPATH environment variable to the
+stanford-postagger.jar
+
+    export CLASSPATH=stanford-postagger-2015-12-09/stanford-postagger.jar

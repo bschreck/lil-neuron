@@ -20,6 +20,9 @@ import pdb
 # get full google news corpus (or other corpus, look into what GloVe is trained on)
 # add in my rap corpus, which includes slang words
 # retrain to produce vectors for all words in my corpus
+# ACTUALLY check on how many of my rap words are in the pretrained GloVe vectors (most of them probably are)
+# for how to do word embeddings: http://stackoverflow.com/questions/35687678/using-a-pre-trained-word-embedding-word2vec-or-glove-in-tensorflow
+# freeze weights inititally for a few epochs until network is decent, then start training them
 
 # Use standard embedding (not bidirectional rnn) for word vectors, using double layer of word-level
 # Freeze these and then use triple level
