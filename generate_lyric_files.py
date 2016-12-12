@@ -62,8 +62,15 @@ def generate_files(dirname):
                     unknown_song_index += 1
                 mkdir_recursive(os.path.dirname(filename))
                 with open(filename, 'w') as f:
-                    if not lyrics[0][0].startswith('<nrp:'):
+                    if not lyrics[0][0].startswith('(NRP:'):
                         f.write(u'<nrp:{}>\n'.format(rapper_name).encode('utf8'))
+                    else:
+                        first_line = lyrics[0][0]
+                        words = first_line.split('(NRP:')
+                        rappers = [w.replace(")", "").strip().replace(' ', '_').lower()
+                                   for w in words if w]
+                        first_line = '<nrp:{}>\n<eos>\n'.format(';'.join(rappers))
+                        lyrics[0][0] = first_line
                     for verse in lyrics:
                         f.write(u'\n'.join(verse).encode('utf8'))
                         f.write(u'\n<eov>\n'.encode('utf8'))
@@ -95,12 +102,17 @@ def make_single_corpus_file(filenames, output_filename):
     with open(output_filename, 'wb') as out:
         for f in filenames:
             with open(f, 'r') as fo:
-                words = fo.read()
-                # TODO: remove if I redo lyric files
-                # TODO: how to combine multiple NRP's into a single one?
-                words = words.replace('\n', '\n<eos>\n')
-                words = re.sub(r'(\(NRP: )([\w ]+)(\))', format_rapper, words)
-                out.write(words)
+                lines = fo.readlines()
+                for line in lines:
+                    # TODO: remove if I redo lyric files
+                    if line.lstrip().startswith('(NRP:'):
+                        words = line.split('(NRP:')
+                        rappers = [w.replace(")", "").strip().replace(' ', '_').lower()
+                                   for w in words if w]
+                        line = '<nrp:{}>\n<eos>\n'.format(';'.join(rappers))
+                    else:
+                        line += '\n<eos>\n'
+                    out.write(line)
                 out.write('\n<eor>\n')
 
 

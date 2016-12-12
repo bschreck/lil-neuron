@@ -13,3 +13,6 @@ checkpoint
 models
 *.pyc
 *.tgz
+stanford*
+cmudict
+*.gz
