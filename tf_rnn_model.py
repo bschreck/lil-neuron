@@ -739,6 +739,11 @@ def main(argv):
     else:
         FLAGS.generate = False
 
+    # TODO: make sure all files are set to correct places
+    # start with loading word vectors/prons from file set to False
+    # and provide the filename of the glove vectors
+    # figure out what I need to package and deliver to remote GPUs
+    # (make sure I load pronunciations to a file first so I don't need mongo)
     extractor = RapFeatureExtractor(from_config=True,
                                     config_file=FLAGS.extractor_config_file,
                                     pronunciation_vectors_file=FLAGS.processed_pron_vector_file,
