@@ -45,16 +45,23 @@ flags = tf.flags
 logging = tf.logging
 
 flags.DEFINE_string(
-    "model", "small",
-    "A type of model. Possible options are: small, medium, large.")
-flags.DEFINE_string("train_filename", 'data/tf_train_data.txt',
+    "model", "test",
+    "A type of model. Possible options are: test, small, medium, large.")
+flags.DEFINE_string("train_filename", 'data/tf_train_data_tiny.txt',
                     "where the training data is stored.")
-flags.DEFINE_string("valid_filename", 'data/tf_valid_data.txt',
+flags.DEFINE_string("valid_filename", 'data/tf_valid_data_tiny.txt',
                     "where the validation data is stored.")
-flags.DEFINE_string("test_filename", 'data/tf_test_data.txt',
+flags.DEFINE_string("test_filename", 'data/tf_test_data_tiny.txt',
                     "where the test data is stored.")
-flags.DEFINE_string("extractor_config_file", 'data/config.p',
+flags.DEFINE_string("extractor_config_file", 'data/config_tiny.p',
                     "Config info for RapFeatureExtractor")
+flags.DEFINE_string("word_vector_file", 'data/word_vectors/glove_retro.txt',
+                    "Config info for RapFeatureExtractor")
+
+flags.DEFINE_string("processed_word_vector_file", 'data/processed_word_vector_array.p',
+                    "")
+flags.DEFINE_string("processed_pron_vector_file", 'data/processed_pron_vector_array.p',
+                    "")
 flags.DEFINE_string("save_path", 'models',
                     "Model output directory.")
 flags.DEFINE_string("device", '/gpu:0',
@@ -63,6 +70,12 @@ flags.DEFINE_bool("use_fp16", False,
                   "Train using 16-bit floats instead of 32bit floats")
 flags.DEFINE_bool("generate", False,
                   "If True, generate text instead of training")
+flags.DEFINE_bool("train_word_vectors", False,
+                  "whether to train word embeddings")
+flags.DEFINE_bool("train_pron_embedding", False,
+                  "whether to train pronunciation embeddings")
+flags.DEFINE_bool("train_context_embedding", False,
+                  "whether to train context (i.e. rap vectors) embeddings")
 
 FLAGS = flags.FLAGS
 
@@ -130,7 +143,15 @@ class RNNInput(object):
 
 
 class RNNPath(object):
-    def __init__(self, is_training, config, input_, device=FLAGS.device):
+    def __init__(self, is_training, config, input_,
+                 train_word_vectors=FLAGS.train_word_vectors,
+                 train_pron_embedding=FLAGS.train_pron_embedding,
+                 train_context_embedding=FLAGS.train_context_embedding,
+                 device=FLAGS.device):
+        if not is_training:
+            train_word_vectors = False
+            train_pron_embedding = False
+            train_context_embedding = False
         self.device = device
         self._input = input_
         words = input_.words
@@ -140,16 +161,19 @@ class RNNPath(object):
 
         self.batch_size = config.batch_size
         self.rnn_size = config.hidden_size
+        self.keep_prob = config.keep_prob
         self.num_layers = config.num_layers
         self.embedding_dim = config.embedding_dim
         self.context_embedding_dim = config.context_embedding_dim
         self.vocab_size = config.vocab_size
+        self.max_num_steps = config.max_num_steps
+        self.max_pron_length = config.max_pron_length
 
         with tf.device(device):
             # Can experiment with different settings
             lstm_args = dict(use_peepholes=False,
                              cell_clip=None,
-                             initializer=None,
+                             initializer=initializer(),
                              num_proj=None,
                              proj_clip=None,
                              num_unit_shards=1,
@@ -169,62 +193,75 @@ class RNNPath(object):
 
 
             embedding = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, self.embedding_dim]),
-                trainable=False, name="word_vector")
+                trainable=train_word_vectors, name="word_vector")
 
-            embedding_placeholder = tf.placeholder(tf.float32, [self.vocab_size, self.embedding_dim])
-            embedding_init = embedding.assign(embedding_placeholder)
+            self._embedding_placeholder = tf.placeholder(tf.float32, [self.vocab_size, self.embedding_dim])
+            self._embedding_init = embedding.assign(self._embedding_placeholder)
 
-            pron_lookup = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, config.max_pron_length]),
+            pron_lookup = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, self.max_pron_length]),
                 trainable=False, name="pron_lookup")
 
-            pron_lookup_placeholder = tf.placeholder(tf.float32, [self.vocab_size, config.max_pron_length])
-            pron_lookup_init = pron_lookup.assign(pron_lookup_placeholder)
+            self._pron_lookup_placeholder = tf.placeholder(tf.float32, [self.vocab_size, self.max_pron_length])
+            self._pron_lookup_init = pron_lookup.assign(self._pron_lookup_placeholder)
 
 
 
             pronunciation_embedding = tf.get_variable("pronunciation_embedding_W",
                     initializer=initializer(),
-                    shape=[config.max_pron_length, self.embedding_dim],
-                    trainable=True,
+                    shape=[self.max_pron_length, self.embedding_dim],
+                    trainable=train_pron_embedding,
                     dtype=data_type())
             pronunciation_b = tf.get_variable("pronunciation_embedding_b",
                                               initializer=initializer(),
                                               shape=[self.embedding_dim],
-                                              trainable=True,
+                                              trainable=train_context_embedding,
                                               dtype=data_type())
 
             context_embedding = tf.get_variable("context_embedding_W",
                     initializer=initializer(),
                     shape=[self.context_size, self.context_embedding_dim],
-                    trainable=True,
+                    trainable=train_context_embedding,
                     dtype=data_type())
             context_b = tf.get_variable("context_embedding_b",
                                               initializer=initializer(),
                                               shape=[self.context_embedding_dim],
-                                              trainable=True,
+                                              trainable=train_context_embedding,
                                               dtype=data_type())
 
 
             word_embed_inputs = tf.nn.embedding_lookup(embedding, words)
             pron_inputs = tf.nn.embedding_lookup(pron_lookup, words)
-            pron_embed_inputs = tf.nn.batch_matmul(pronunciation_embedding, pron_inputs) + pronunciation_b
-            context_embed_inputs = tf.nn.batch_matmul(context_embedding, self.context) + context_b
+            flat_pron_inputs = tf.reshape(pron_inputs, [self.batch_size * self.max_num_steps, self.max_pron_length])
+            pron_embed_inputs = tf.batch_matmul(flat_pron_inputs, pronunciation_embedding) + pronunciation_b
+            flat_context_inputs = tf.reshape(self.context, [self.batch_size * self.max_num_steps, self.context_size])
+            context_embed_inputs = tf.batch_matmul(tf.cast(flat_context_inputs, data_type()), context_embedding) + context_b
+
+            pron_embed_inputs = tf.reshape(pron_embed_inputs, [self.batch_size, self.max_num_steps, self.embedding_dim])
+            context_embed_inputs = tf.reshape(context_embed_inputs, [self.batch_size, self.max_num_steps, self.context_embedding_dim])
             # TODO: try dropout, nonlinearity
 
 
 
             combined = tf.concat(2, [word_embed_inputs, pron_embed_inputs, context_embed_inputs])
 
-            resize_layer = tf.get_variable("rnn_resize",
+            full_embedded_input_size = 2*self.embedding_dim + self.context_embedding_dim
+            resize_layer_w = tf.get_variable("rnn_resize_w",
                                            initializer=initializer(),
-                                           shape=[2*self.embedding_dim + self.context_embedding_dim, config.rnn_size],
+                                           shape=[full_embedded_input_size, self.rnn_size],
                                            trainable=True,
                                            dtype=data_type())
-            rnn_input = tf.nn.batch_matmul(combined, resize_layer)
+            resize_layer_b = tf.get_variable("rnn_resize_b",
+                                           initializer=initializer(),
+                                           shape=[self.rnn_size],
+                                           trainable=True,
+                                           dtype=data_type())
+            combined_flattened = tf.reshape(combined, [self.batch_size * self.max_num_steps, full_embedded_input_size])
+            rnn_input = tf.batch_matmul(combined_flattened, resize_layer_w) + resize_layer_b
+            rnn_input = tf.reshape(rnn_input, [self.batch_size, self.max_num_steps, self.rnn_size])
 
 
-            if is_training and config.keep_prob < 1:
-                rnn_input = tf.nn.dropout(rnn_input, config.keep_prob)
+            if is_training and self.keep_prob < 1:
+                rnn_input = tf.nn.dropout(rnn_input, self.keep_prob)
 
             verse_lengths = tf.reshape(verse_lengths, [-1])
             verse_lengths = tf.tile(verse_lengths, [self.batch_size])
@@ -254,7 +291,18 @@ class RNNPath(object):
     @property
     def output_size(self):
         return self.rnn_size
-
+    @property
+    def embedding_placeholder(self):
+        return self._embedding_placeholder
+    @property
+    def embedding_init(self):
+        return self._embedding_init
+    @property
+    def pron_lookup_placeholder(self):
+        return self._pron_lookup_placeholder
+    @property
+    def pron_lookup_init(self):
+        return self._pron_lookup_init
 
 class Learn(object):
     def __init__(self, is_training, config, labels, input, verse_lengths,
@@ -265,12 +313,13 @@ class Learn(object):
         self.vocab_size = config.vocab_size
 
         with tf.device(device):
-            verse_len = tf.shape(self.rnn_path.outputs)[1]
-
-            concat = tf.concat(2, [self.rnn_path.outputs, self.context])
-            outputs_flat = tf.reshape(self.rnn_path.outputs, [-1, self.rnn_path.output_size + self.context_size])
+            #verse_len = tf.shape(self.rnn_path.outputs)[1]
 
             final_unit_size = self.rnn_path.output_size + self.context_size
+
+            concat = tf.concat(2, [self.rnn_path.outputs, tf.cast(self.context, data_type())])
+            outputs_flat = tf.reshape(concat, [-1, final_unit_size])
+
 
             softmax_b = tf.get_variable("softmax_b", [self.vocab_size], dtype=data_type())
             print "vocab size:", self.vocab_size
@@ -312,7 +361,7 @@ class Learn(object):
             grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars,
                                                            aggregation_method=aggmeth),
                                               config.max_grad_norm)
-            optimizer = tf.train.GradientDescentOptimizer(self._lr)
+            optimizer = tf.train.AdamOptimizer(self._lr)
             self._train_op = optimizer.apply_gradients(
                 zip(grads, tvars),
                 global_step=tf.contrib.framework.get_or_create_global_step())
@@ -361,25 +410,25 @@ class FullLNModel(object):
         rappers = []
         for r in xrange(num_rappers):
             rappers.append(input_["rapper" + str(r)])
-        context = tf.concat(1, rappers)
+        context = tf.concat(2, rappers)
 
         labels = input_.labels
 
-        rnn_input = RNNInput(words=input_.words,
+        self.rnn_input = RNNInput(words=input_.words,
                              context=context,
                              context_size = num_rappers * self.config.rap_vec_size,
                              verse_lengths=self.verse_length)
         with tf.variable_scope("RNNPath"):
-            rnn_path = RNNPath(is_training=is_training,
-                               input_=rnn_input,
-                               config=config,
-                               device=device)
+            self.rnn_path = RNNPath(is_training=is_training,
+                                    input_=self.rnn_input,
+                                    config=config,
+                                    device=device)
 
 
         with tf.variable_scope("Learn"):
             self.learn = Learn(is_training=is_training,
                                labels=labels,
-                               input=rnn_path,
+                               input=self.rnn_path,
                                verse_lengths=self.verse_length,
                                config=config,
                                device=device)
@@ -427,11 +476,25 @@ class FullLNModel(object):
     def train_op(self):
         return self.learn.train_op
 
+    @property
+    def embedding_placeholder(self):
+        return self.rnn_path.embedding_placeholder
+    @property
+    def embedding_init(self):
+        return self.rnn_path.embedding_init
+    @property
+    def pron_lookup_placeholder(self):
+        return self.rnn_path.pron_lookup_placeholder
+    @property
+    def pron_lookup_init(self):
+        return self.rnn_path.pron_lookup_init
+
 class Config(object):
-    def __init__(self, vocab_size, rap_vec_size, num_rappers):
+    def __init__(self, vocab_size, rap_vec_size, num_rappers, max_pron_length):
         self.vocab_size = vocab_size
         self.rap_vec_size = rap_vec_size
         self.num_rappers = num_rappers
+        self.max_pron_length = max_pron_length
 
     def to_eval_gen_config(self):
         config = copy.copy(self)
@@ -531,7 +594,7 @@ def get_test_file():
     return FLAGS.test_filename
 
 
-def run_epoch(session, model, eval_op=None, verbose=False):
+def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eval_op=None, verbose=False):
     """Runs the model on the given data."""
     start_time = time.time()
     costs = 0.0
@@ -545,9 +608,16 @@ def run_epoch(session, model, eval_op=None, verbose=False):
     if eval_op is not None:
         fetches["eval_op"] = eval_op
 
-    session.run([model.embedding_init, model.pron_lookup_init],
-                feed_dict={model.embedding_placeholder: model.embedding_array,
-                           model.pron_lookup_placeholder: model.pron_lookup_array})
+    embedding_feed_dict = {}
+    embedding_init_vars = []
+    if word_vectors is not None:
+        embedding_init_vars.append(model.embedding_init)
+        embedding_feed_dict[model.embedding_placeholder] = word_vectors
+    if pronunciation_vectors is not None:
+        embedding_init_vars.append(model.pron_lookup_init)
+        embedding_feed_dict[model.pron_lookup_placeholder] = pronunciation_vectors
+    session.run(embedding_init_vars,
+                feed_dict=embedding_feed_dict)
 
     for step in range(model.input.epoch_size):
         feed_dict = {}
@@ -669,17 +739,22 @@ def main(argv):
     else:
         FLAGS.generate = False
 
-    extractor = RapFeatureExtractor(train_filenames=[],
-                                    valid_filenames=[],
-                                    from_config=True,
-                                    config_file=FLAGS.extractor_config_file)
+    extractor = RapFeatureExtractor(from_config=True,
+                                    config_file=FLAGS.extractor_config_file,
+                                    pronunciation_vectors_file=FLAGS.processed_pron_vector_file,
+                                    load_word_vectors_from_file=True,
+                                    word_vectors_file=FLAGS.processed_word_vector_file,
+                                    load_pronunciation_vectors_from_file=True)
+    pronunciation_vectors, max_pron_length = extractor.load_pronunciation_vectors()
+    word_vectors = extractor.load_glove_vectors()#FLAGS.word_vector_file)
+
     vocab_size = extractor.vocab_length + 1
     rap_vec_size = extractor.len_rapper_vector
     num_rappers = extractor.max_nrps
     train_filename = get_train_file()
     valid_filename = get_valid_file()
     test_filename = get_test_file()
-    config = get_config(vocab_size, rap_vec_size, num_rappers)
+    config = get_config(vocab_size, rap_vec_size, num_rappers, max_pron_length)
     eval_gen_config = config.to_eval_gen_config()
 
     if FLAGS.generate:
@@ -690,25 +765,25 @@ def main(argv):
 
     print "initializing session:"
     with tf.Graph().as_default():
-        initializer = tf.random_uniform_initializer(-config.init_scale,
-                                                    config.init_scale)
+        init = initializer()
+
         with tf.name_scope("Train"):
             train_ln_input = LNInput(extractor=extractor, config=config, filename=train_filename, name="TrainInput")
             print "initializing training model:"
-            with tf.variable_scope("Model", reuse=None, initializer=initializer):
+            with tf.variable_scope("Model", reuse=None, initializer=init):
                 m = FullLNModel(is_training=True, config=config, input_=train_ln_input)
             tf.scalar_summary("Training Loss", m.cost)
             tf.scalar_summary("Learning Rate", m.lr)
         with tf.name_scope("Valid"):
             print "initializing valid model:"
             valid_ln_input = LNInput(extractor=extractor, config=config, filename=valid_filename, name="ValidInput")
-            with tf.variable_scope("Model", reuse=True, initializer=initializer):
+            with tf.variable_scope("Model", reuse=True, initializer=init):
                 mvalid = FullLNModel(is_training=False, config=config, input_=valid_ln_input)
             tf.scalar_summary("Validation Loss", mvalid.cost)
         with tf.name_scope("Test"):
             print "initializing test model:"
             test_ln_input = LNInput(extractor=extractor, config=eval_gen_config, filename=test_filename, name="TestInput")
-            with tf.variable_scope("Model", reuse=True, initializer=initializer):
+            with tf.variable_scope("Model", reuse=True, initializer=init):
                 mtest = FullLNModel(is_training=False, config=eval_gen_config,
                                     input_=test_ln_input)
 
@@ -721,7 +796,7 @@ def main(argv):
                 m.assign_lr(session, config.learning_rate * lr_decay)
 
                 print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
-                train_perplexity = run_epoch(session, m, eval_op=m.train_op,
+                train_perplexity = run_epoch(session, m, word_vectors, pronunciation_vectors, eval_op=m.train_op,
                                              verbose=True)
                 print("Epoch: %d Train Perplexity: %.3f" % (i + 1, train_perplexity))
                 valid_perplexity = run_epoch(session, mvalid)

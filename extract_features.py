@@ -17,6 +17,7 @@ import re
 try:
     from pymongo import MongoClient
     client = MongoClient()
+    from generate_lyric_files import load_all_pronunciations
 except:
     pass
 
@@ -35,6 +36,10 @@ class RapFeatureExtractor(object):
                  sequence_feature_set=None,
                  static_feature_set=None,
                  from_config=False,
+                 load_pronunciation_vectors_from_file=False,
+                 load_word_vectors_from_file=False,
+                 word_vectors_file='data/processed_word_vector_array.p',
+                 pronunciation_vectors_file='data/processed_pron_vector_array.p',
                  spellcheck_dicts='data/word_dicts.p',
                  config_file='data/config_train.p'):
         if not from_config:
@@ -44,6 +49,10 @@ class RapFeatureExtractor(object):
         self.test_corpus = test_corpus
         self.max_nrps = max_rappers_per_verse
         self.config_file = config_file
+        self.word_vectors_file = word_vectors_file
+        self.pronunciation_vectors_file = pronunciation_vectors_file
+        self.load_word_vectors_from_file = load_word_vectors_from_file
+        self.load_pronunciation_vectors_from_file = load_pronunciation_vectors_from_file
 
         self.phone2sym = {}
         self.sym2phone = {}
@@ -85,6 +94,49 @@ class RapFeatureExtractor(object):
         special_symbols = ['<eos>', '<eov>', '<nrp>', '<eor>', '<unk>']
         for s in special_symbols:
             self.get_word_sym(s)
+
+    def load_glove_vectors(self, vectors_filename=None):
+        if self.load_word_vectors_from_file:
+            with open(self.word_vectors_file, 'rb') as f:
+                array = pickle.load(f)
+                return array
+        else:
+            array = None
+            with open(vectors_filename, 'r') as f:
+                for line in f:
+                    vals = line.rstrip().split(' ')
+                    vector = [float(x) for x in vals[1:]]
+                    if array is None:
+                        array = np.zeros((max(self.word_to_int.values())+1, len(vector)))
+                    wordint = self.word_to_int.get(vals[0], None)
+                    if wordint:
+                        array[wordint] = vector
+            with open(self.word_vectors_file, 'wb') as f:
+                pickle.dump(array, f)
+            return array
+
+    def load_pronunciation_vectors(self):
+        if self.load_pronunciation_vectors_from_file:
+            with open(self.pronunciation_vectors_file, 'rb') as f:
+                array, max_pron_length = pickle.load(f)
+                return array, max_pron_length
+
+        else:
+            pronunciations = load_all_pronunciations()
+
+            max_pron_length = max((len(p) for p in pronunciations.values()))
+            array = np.zeros((max(self.word_to_int.values()) + 1, max_pron_length))
+
+            for word, pron in pronunciations.iteritems():
+                syms = [self.phone2sym[p] for p in pron]
+                wordint = self.word_to_int.get(word, None)
+                if wordint:
+                    array[wordint, :len(syms)] = syms
+
+            with open(self.pronunciation_vectors_file, 'wb') as f:
+                pickle.dump([array, max_pron_length], f)
+            return array, max_pron_length
+
 
     def get_sym(self, full, full2sym, vocab_length, sym2full=None):
         if full in full2sym:

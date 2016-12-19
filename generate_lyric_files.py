@@ -11,6 +11,7 @@ from nltk.tokenize import StanfordTokenizer
 from nltk.corpus.reader.cmudict import CMUDictCorpusReader
 from spell_checker import SpellChecker
 import inflect
+from find_pronunciations import all_phones
 inflect_engine = inflect.engine()
 
 
@@ -352,40 +353,22 @@ def load_all_pronunciations():
     for r in records:
         pronunciations[r['word']] = r['pronunciation']
     # remove stresses, only take 1st pronunciation
+    new_pronunciations = {}
     for k, v in pronunciations.iteritems():
-        if type(v) == str:
+        if type(v) in (str, unicode):
             v = v.split()
 
-        v = [re.sub("\d+", "", p) for p in v]
-        pronunciations[k] = v
-    return pronunciations
+        if len(k.replace("'","")) == 0:
+            continue
+        new_v = []
+        for p in v:
+            new_p = re.sub("\d+", "", p)
+            if len(new_p) > 0:
+                new_v.append(new_p)
+        new_pronunciations[k] = new_v
+    return new_pronunciations
 
 
-
-def load_glove_vectors(filename, word2int):
-    array = None
-    with open(filename, 'r') as f:
-        for line in f:
-            vals = line.rstrip().split(' ')
-            vector = [float(x) for x in vals[1:]]
-            if array is None:
-                array = np.zeros((max(word2int.values())+1, len(vector)))
-            wordint = word2int.get(vals[0], None)
-            if wordint:
-                array[wordint] = vector
-    return array
-
-def load_pronunciation_vectors(word2int, phone2int):
-    pronunciations = load_all_pronunciations()
-    max_pron_length = max((len(p) for p in pronunciations.values()))
-    array = np.zeros((max(word2int.values()) + 1, max_pron_length))
-
-    for word, pron in pronunciations.iteritems():
-        syms = [phone2int[p] for p in pron]
-        wordint = word2int.get(word, None)
-        if wordint:
-            array[wordint, :len(syms)] = syms
-    return array
 
 
 def word_count(filenames):
