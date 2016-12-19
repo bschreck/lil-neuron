@@ -3,6 +3,8 @@
 import math
 import multiprocessing as mp
 import pdb
+import string
+import pronouncing
 all_phones = set(["AA", "AE", "AH", "AO", "AW", "AY", "B", "CH", "D", "DH",
                   "EH", "ER", "EY", "F", "G", "HH", "IH", "IY", "JH", "K",
                   "L", "M", "N", "NG", "OW", "OY", "P", "R", "S", "SH",
@@ -26,7 +28,42 @@ def valid_pron(pron):
             return False
     return True
 
+def no_punc(w):
+    if len(w.replace("'", "")) == 0:
+        return False
+    if w in ['nrp', 'eov', 'eos', 'eor']:
+        return False
+    for c in w:
+        if c != "'" and c in string.punctuation:
+            return False
+    return True
+    # [i for i in x if i in string.punctuation]
+    # replace_punctuation = dict((ord(char), None) for char in string.punctuation
+                               # if char != "'")
+    # try:
+        # new = unicode(w).translate(replace_punctuation)
+    # except:
+        # return False
+    # else:
+        # if len(new) == 0:
+            # return False
+    # return True
+
 def find_pronunciations():
+    from pymongo import MongoClient
+    client = MongoClient()
+    db = client['lil-neuron-db']
+    records = db.slang_words.find({"pronunciation": {'$exists': False}})
+
+    SLANG_WORD_COUNTS = sorted([(r["word"], r["count"]) for r in records
+                                 if r["count"] > 60 and no_punc(r['word'])],
+                               key=lambda x: -x[1])
+
+    print "SLANG WORDS LEFT:", len(SLANG_WORD_COUNTS)
+
+    records = db.partial_words.find()
+    PARTIAL_WORDS = {r['word']: r['pronunciation'] for r in records}
+
     session_count = 0
     for word, count in SLANG_WORD_COUNTS:
         inp = None
@@ -175,6 +212,7 @@ def load_dicts():
     for r in records:
         INT_TO_DWORD[r["int"]] = r["word"]
 if __name__ == '__main__':
+    find_pronunciations()
     # load_dicts()
     #update_slang_ints()
 
@@ -184,8 +222,8 @@ if __name__ == '__main__':
     from pymongo import MongoClient
     client = MongoClient()
     db = client['lil-neuron-db']
-    INT_TO_DWORD = {}
-    records = db.dword_to_int.find()
-    for r in records:
-        INT_TO_DWORD[r["int"]] = r["word"]
-    update_dword_prons(INT_TO_DWORD)
+    # INT_TO_DWORD = {}
+    # records = db.dword_to_int.find()
+    # for r in records:
+        # INT_TO_DWORD[r["int"]] = r["word"]
+    # update_dword_prons(INT_TO_DWORD)

@@ -82,3 +82,5 @@ Ensure you set the CLASSPATH environment variable to the
 stanford-postagger.jar
 
     export CLASSPATH=stanford-postagger-2015-12-09/stanford-postagger.jar
+
+Try to use retrofitted vectors

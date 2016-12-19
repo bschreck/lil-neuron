@@ -86,12 +86,18 @@ def formulate_filename(dirname, rapper, year, album, song):
     return "/".join([dirname, rapper, str(year), album, song]) + ".txt"
 
 
-def all_filenames(dirname):
-    filenames = []
+def all_filenames_by_artist(dirname):
+    if not dirname.endswith('/'):
+        dirname += '/'
+    filenames = {}
     for root, dirs, files in os.walk(dirname):
         for file in files:
             if file.endswith(".txt"):
-                filenames.append(os.path.join(root, file))
+                path = os.path.join(root, file)
+                artist = path.split(dirname)[1].split('/')[0]
+                if artist not in filenames:
+                    filenames[artist] = []
+                filenames[artist].append(os.path.join(root, file))
     return filenames
 
 
@@ -125,7 +131,11 @@ def word_numbers(num):
 def tokenize_and_save_corpus(corpus_filename, new_filename):
     with open(corpus_filename, 'r') as f:
         corpus_str = f.read()
-    tokenized = StanfordTokenizer().tokenize(corpus_str)
+    options = {
+        'normalizeParentheses': False,
+        'normalizeOtherBrackets': False,
+    }
+    tokenized = StanfordTokenizer(options=options).tokenize(corpus_str)
     lowered = [w.lower() for w in tokenized]
 
     num = r'(?<!\S)(\d*\.?\d+|\d{1,3}(,\d{3})*(\.\d+)?)(?!\S)'
@@ -143,6 +153,19 @@ def tokenize_and_save_corpus(corpus_filename, new_filename):
                 new_words.extend(nwords)
             else:
                 new_words.append(word)
+
+    # leave in ' because tokenizer converts "that's" to "that 's"
+    replace_punctuation = dict((ord(char), None) for char in string.punctuation
+                               if char != "'")
+    words = new_words
+    new_words = []
+    for i, w in enumerate(words):
+        if w.startswith('<') and w.endswith('>'):
+            new_words.append(w)
+            continue
+        new = unicode(w).translate(replace_punctuation)
+        if len(new):
+            new_words.append(new)
     with open(new_filename, 'w') as f:
         f.write(' '.join(new_words).encode('utf-8'))
 
@@ -204,24 +227,31 @@ def build_word_dict(tokenized_corpus_filenames, pronouncing_word_count_filename)
 
 
 def train_test_split(dirname, train_ratio=.9, valid_ratio=.05):
-    filenames = all_filenames(dirname)
+    filenames = all_filenames_by_artist(dirname)
     train_indices = np.random.choice(np.arange(len(filenames)),
                                      replace=False,
                                      size=int(len(filenames) * train_ratio))
 
-    train_filenames = [f for i, f in enumerate(filenames) if i in train_indices]
-    valid_test_filenames = [f for i, f in enumerate(filenames) if i not in train_indices]
+    train_filenames = [v for i, kv in enumerate(filenames.iteritems())
+                       for v in kv[1] if i in train_indices]
+
+    valid_test_filenames = [kv[1] for i, kv in enumerate(filenames.iteritems()) if i not in train_indices]
 
     new_valid_ratio = valid_ratio / (1 - train_ratio)
     valid_indices = np.random.choice(np.arange(len(valid_test_filenames)),
                                      replace=False,
                                      size=int(len(valid_test_filenames) * new_valid_ratio))
-    valid_filenames = [f for i, f in enumerate(valid_test_filenames) if i in valid_indices]
-    test_filenames = [f for i, f in enumerate(valid_test_filenames) if i not in valid_indices]
+    valid_filenames = [f for i, v in enumerate(valid_test_filenames)
+                       for f in v if i in valid_indices]
+    test_filenames = [f for i, v in enumerate(valid_test_filenames)
+                      for f in v if i not in valid_indices]
     return train_filenames, valid_filenames, test_filenames
 
 
-def process_corpi(output_dict_filename='data/word_dicts.p'):
+def process_corpora(output_dict_filename='data/word_dicts.p'):
+    # Make sure 's and other similar tokens get pronunciations
+
+    # TODO: add in good rappers more than once
     train, valid, test = train_test_split("data/lyric_files")
     corpus_filenames = []
     tokenized_filenames = []
@@ -248,6 +278,25 @@ def process_corpi(output_dict_filename='data/word_dicts.p'):
     # Should be able to look up GloVe vectors for most words in both slang and dictionary word_counts
     return dicts
 
+def find_split_number_word_prons():
+    from pymongo import MongoClient
+    import pronouncing
+    client = MongoClient()
+    db = client['lil-neuron-db']
+    records = db.slang_words.find()
+    nums = {}
+    for n in range(21, 100):
+        dashed = word_numbers(str(n))[0]
+        nodashed = dashed.replace('-', '')
+        nums[nodashed] = dashed.split('-')
+
+    for r in records:
+        if 'pronunciation' not in r:
+            w = r['word']
+            if w in nums:
+                prons = [pronouncing.phones_for_word(n)[0] for n in nums[w]]
+                pron = ' '.join(prons)
+                db.slang_words.update({'word': w}, {'$set':{'pronunciation': pron}})
 
 def get_existing_slang_words():
     from pymongo import MongoClient
@@ -268,127 +317,75 @@ def load_slang_words_into_mongo(word_dict_file):
         dicts = pck.load(f)
         slang_words = dicts['slang_word_counts']
     pronunciations = CMUDictCorpusReader('data/pronouncing', 'cmudict').dict()
+
+    replace_punctuation = dict((ord(char), None) for char in string.punctuation
+                               if char != "'")
     for w, c in slang_words.iteritems():
-        if '--' in w or ',' in w:
+        try:
+            new = unicode(w).translate(replace_punctuation)
+        except:
             continue
         else:
-            if not db.slang_words.find_one({'word': w}):
-                word_dict = {'word': w, 'count': c}
-                if w.endswith('in') and w + 'g' in pronunciations:
-                    pron = pronunciations[w + 'g'][0]
-                    word_dict['pronunciation'] = pron
-                elif w.endswith('ins') and w[:-1] + 'g' in pronunciations:
-                    pron = pronunciations[w[:-1] + 'g'][0] + ['Z']
-                    word_dict['pronunciation'] = pron
-                elif w.endswith('s') and w[:-1] in pronunciations:
-                    pron = pronunciations[w[:-1]][0] + ['Z']
-                    word_dict['pronunciation'] = pron
-                db.slang_words.insert_one(word_dict)
+            if len(new) == 0:
+                continue
+            else:
+                if not db.slang_words.find_one({'word': w}):
+                    word_dict = {'word': w, 'count': c}
+                    if w.endswith('in') and w + 'g' in pronunciations:
+                        pron = pronunciations[w + 'g'][0]
+                        word_dict['pronunciation'] = pron
+                    elif w.endswith('ins') and w[:-1] + 'g' in pronunciations:
+                        pron = pronunciations[w[:-1] + 'g'][0] + ['Z']
+                        word_dict['pronunciation'] = pron
+                    elif w.endswith('s') and w[:-1] in pronunciations:
+                        pron = pronunciations[w[:-1]][0] + ['Z']
+                        word_dict['pronunciation'] = pron
+                    db.slang_words.insert_one(word_dict)
 
+# TODO: get rid of all x3/3x etc. stuff that happens at choruses
 def load_all_pronunciations():
-    pronunciations = CMUDictCorpusReader('data/pronouncing', 'cmudict').dict()
+    pronunciations = {k: v[0] for k, v in CMUDictCorpusReader('data/pronouncing', 'cmudict').dict().iteritems()}
     from pymongo import MongoClient
     client = MongoClient()
     db = client['lil-neuron-db']
     records = db.slang_words.find({'pronunciation': {'$exists': True}})
     for r in records:
         pronunciations[r['word']] = r['pronunciation']
+    # remove stresses, only take 1st pronunciation
+    for k, v in pronunciations.iteritems():
+        if type(v) == str:
+            v = v.split()
+
+        v = [re.sub("\d+", "", p) for p in v]
+        pronunciations[k] = v
     return pronunciations
 
-def load_words_and_prons(tokenized_corpus_filename, glove_vector_fname):
-    with open(tokenized_corpus_filename, 'r') as f:
-        corpus = f.read().split()
-    vectors = load_glove_vectors(glove_vector_fname)
+
+
+def load_glove_vectors(filename, word2int):
+    array = None
+    with open(filename, 'r') as f:
+        for line in f:
+            vals = line.rstrip().split(' ')
+            vector = [float(x) for x in vals[1:]]
+            if array is None:
+                array = np.zeros((max(word2int.values())+1, len(vector)))
+            wordint = word2int.get(vals[0], None)
+            if wordint:
+                array[wordint] = vector
+    return array
+
+def load_pronunciation_vectors(word2int, phone2int):
     pronunciations = load_all_pronunciations()
-    word_vectors = []
-    word_prons = []
-    for w in corpus:
-        #check special symbols here
-        number_convert = re.sub('\d', '#', w)
-        #use number_convert go get vectors
-        # In future can try a <unk> vector and pron
-        unk_vector = False
-        if number_convert in vectors and w in pronunciations:
-            word_vectors.append(vectors[number_convert])
-            word_prons.append(pronunciations[w])
+    max_pron_length = max((len(p) for p in pronunciations.values()))
+    array = np.zeros((max(word2int.values()) + 1, max_pron_length))
 
-# # TODO: acronyms from extract_features._find_prons
-# # TODO: manually get pronunciations for most common slang words in corpus
-# def build_word_dict(filenames):
-    # begin = time.time()
-    # trans = [' ']*len(string.punctuation)
-    # trans[6] = "'"
-    # trans[11] = ","
-    # trans[13] = "."
-    # trans = ''.join(trans)
-    # replace_punctuation = string.maketrans(string.punctuation, trans)
-    # commas_decimals = string.maketrans(',.', '  ')
-    # num = r'(?<!\S)(\d*\.?\d+|\d{1,3}(,\d{3})*(\.\d+)?)(?!\S)'
-
-    # dword_to_int = {}
-    # int_to_dword = {}
-    # word_to_dwordint = {}
-    # word_counts = defaultdict(int)
-    # slang_word_counts = defaultdict(int)
-    # def add_word(orig, wlist, nondict=[]):
-        # if orig not in word_to_dwordint:
-            # wintlist = []
-            # for w in wlist:
-                # if w in dword_to_int:
-                    # wint = dword_to_int[w]
-                # else:
-                    # wint = len(dword_to_int)
-                    # dword_to_int[w] = wint
-                    # int_to_dword[wint] = w
-                # wintlist.append(wint)
-            # word_to_dwordint[orig] = wintlist
-        # if nondict:
-            # slang_words = [wlist[i] for i in nondict]
-            # dwords = [w for i, w in enumerate(wlist)
-                      # if i not in nondict]
-        # else:
-            # slang_words = []
-            # dwords = wlist
-        # for w in slang_words:
-            # slang_word_counts[w] += 1
-        # for w in dwords:
-            # word_counts[word] += 1
-
-    # for f in filenames:
-        # with open(f, 'r') as fo:
-            # words = fo.read()\
-                    # .replace("<eov>", " ")\
-                    # .replace("\n", " ")\
-                    # .replace('\xe2\x80\x99',"'")\
-                    # .lower()\
-                    # .translate(replace_punctuation)\
-                    # .split()
-            # for word in words:
-                # numbers = re.findall(num, word)
-                # if numbers:
-                    # number = numbers[0][0]
-                    # nwords = _word_numbers(number)
-                    # add_word(word, nwords)
-                # else:
-                    # cd_split = word.translate(commas_decimals).split()
-                    # new_words = []
-                    # nondict = []
-                    # for i, w in enumerate(cd_split):
-                        # if english_d.check(w):
-                            # new_words.append(w)
-                        # else:
-                            # suggested = english_d.suggest(w)
-                            # # TODO: check len of words is the same, and either difference is in
-                            # # case of letter or different vowel
-                            # if len(suggested) and lev.distance(w, suggested[0]) == 1:
-                                # new_words.append(suggested[0])
-                            # else:
-                                # new_words.append(w)
-                                # nondict.append(i)
-                    # add_word(word, new_words, nondict=nondict)
-    # end = time.time()
-    # print "elapsed:", end - begin
-    # return word_to_dwordint, dword_to_int, int_to_dword, word_counts, slang_word_counts
+    for word, pron in pronunciations.iteritems():
+        syms = [phone2int[p] for p in pron]
+        wordint = word2int.get(word, None)
+        if wordint:
+            array[wordint, :len(syms)] = syms
+    return array
 
 
 def word_count(filenames):

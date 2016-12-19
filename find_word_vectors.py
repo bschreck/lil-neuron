@@ -3,14 +3,21 @@ from nltk.tokenize import StanfordTokenizer
 import string
 from collections import Counter
 import re
+import numpy as np
 
-def load_glove_vectors(filename):
+
+def load_glove_vectors(filename, word2int):
+    array = np.zeros((max(word2int.values())+1, 300))
     with open(filename, 'r') as f:
-        vectors = {}
         for line in f:
             vals = line.rstrip().split(' ')
-            vectors[vals[0]] = [float(x) for x in vals[1:]]
-    return vectors
+            vector = [float(x) for x in vals[1:]]
+            if array is None:
+                array = np.zeros((max(word2int.values())+1, len(vector)))
+            wordint = word2int.get(vals[0], None)
+            if wordint:
+                array[wordint] = vector
+    return array
 
 # def find_words():
     # filenames = all_filenames("data/lyric_files")
