@@ -71,9 +71,12 @@ class RapFeatureExtractor(object):
         self.len_rapper_vector = len(self.rapper_vectors.values()[0])
 
     def _load_spellcheck_dict(self, filename):
-        with open(filename, 'rb') as f:
-            dicts = pickle.load(f)
-            self.word_to_dword = dicts['word_to_dword']
+        try:
+            with open(filename, 'rb') as f:
+                dicts = pickle.load(f)
+                self.word_to_dword = dicts['word_to_dword']
+        except IOError:
+            pass
 
     def _load_rap_vecs(self):
         records = self.db.artists.find({'vector': {'$exists': True}},
