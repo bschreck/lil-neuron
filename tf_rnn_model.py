@@ -66,7 +66,7 @@ flags.DEFINE_string("save_path", 'models',
                     "Model output directory.")
 flags.DEFINE_string("device", '/gpu:0',
                     "Preferred device.")
-flags.DEFINE_bool("use_fp16", False,
+flags.DEFINE_bool("use_fp16", True,
                   "Train using 16-bit floats instead of 32bit floats")
 flags.DEFINE_bool("generate", False,
                   "If True, generate text instead of training")
@@ -136,9 +136,9 @@ class GeneratorInput(object):
 
 class RNNInput(object):
     def __init__(self, words, verse_lengths, context, context_size):
-        self.words = words
+        self.words = tf.cast(words, data_type())
         self.verse_lengths = verse_lengths
-        self.context = context
+        self.context = tf.cast(context, data_type())
         self.context_size = context_size
 
 
