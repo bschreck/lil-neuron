@@ -47,13 +47,13 @@ logging = tf.logging
 flags.DEFINE_string(
     "model", "test",
     "A type of model. Possible options are: test, small, medium, large.")
-flags.DEFINE_string("train_filename", 'data/tf_train_data_tiny.txt',
+flags.DEFINE_string("train_filename", 'data/tf_train_data_full.txt',
                     "where the training data is stored.")
-flags.DEFINE_string("valid_filename", 'data/tf_valid_data_tiny.txt',
+flags.DEFINE_string("valid_filename", 'data/tf_valid_data_full.txt',
                     "where the validation data is stored.")
-flags.DEFINE_string("test_filename", 'data/tf_test_data_tiny.txt',
+flags.DEFINE_string("test_filename", 'data/tf_test_data_full.txt',
                     "where the test data is stored.")
-flags.DEFINE_string("extractor_config_file", 'data/config_tiny.p',
+flags.DEFINE_string("extractor_config_file", 'data/config_full.p',
                     "Config info for RapFeatureExtractor")
 flags.DEFINE_string("word_vector_file", 'data/word_vectors/glove_retro.txt',
                     "Config info for RapFeatureExtractor")
@@ -744,6 +744,13 @@ def main(argv):
     # and provide the filename of the glove vectors
     # figure out what I need to package and deliver to remote GPUs
     # (make sure I load pronunciations to a file first so I don't need mongo)
+    # try to run on GPU, then keep updating slang words, and redo corpus with better rappers featured more
+    # in future after learning a good vector embedding and pron embedding:
+    #    learn multiple semantic models for different categories of thought (e.g. poetry, physics, machine learning)
+    #    where each model is trained same way as here
+    #    then when generating rap lyrics, at each time point
+    #    sample from the different semantic models (a semantic model is the word embedding)
+    #    while always using the rap pronunciation embedding
     extractor = RapFeatureExtractor(from_config=True,
                                     config_file=FLAGS.extractor_config_file,
                                     pronunciation_vectors_file=FLAGS.processed_pron_vector_file,
