@@ -136,9 +136,9 @@ class GeneratorInput(object):
 
 class RNNInput(object):
     def __init__(self, words, verse_lengths, context, context_size):
-        self.words = words, data_type()
+        self.words = words
         self.verse_lengths = verse_lengths
-        self.context = context, data_type()
+        self.context = context
         self.context_size = context_size
 
 
