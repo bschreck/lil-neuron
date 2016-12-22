@@ -339,7 +339,7 @@ class Learn(object):
             losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits_flat, y_flat)
 
             # Mask the losses
-            mask = tf.sign(tf.to_float(y_flat))
+            mask = tf.sign(tf.to_float(y_flat, dtype=data_type()))
             masked_losses = mask * losses
 
             # Bring back to [B, T] shape
@@ -355,7 +355,7 @@ class Learn(object):
                 self._probs_flat = tf.nn.softmax(logits_flat)
                 return
 
-            self._lr = tf.Variable(0.0, trainable=False)
+            self._lr = tf.Variable(0.0, trainable=False, dtype=data_type())
             tvars = tf.trainable_variables()
             aggmeth = tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N
             grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars,
@@ -367,7 +367,7 @@ class Learn(object):
                 global_step=tf.contrib.framework.get_or_create_global_step())
 
             self._new_lr = tf.placeholder(
-                tf.float32, shape=[], name="new_learning_rate")
+                data_type(), shape=[], name="new_learning_rate")
             self._lr_update = tf.assign(self._lr, self._new_lr)
 
     def assign_lr(self, session, lr_value):
