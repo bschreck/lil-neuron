@@ -136,9 +136,9 @@ class GeneratorInput(object):
 
 class RNNInput(object):
     def __init__(self, words, verse_lengths, context, context_size):
-        self.words = tf.cast(words, data_type())
+        self.words = words, data_type()
         self.verse_lengths = verse_lengths
-        self.context = tf.cast(context, data_type())
+        self.context = context, data_type()
         self.context_size = context_size
 
 
