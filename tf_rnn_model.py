@@ -339,7 +339,7 @@ class Learn(object):
             losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits_flat, y_flat)
 
             # Mask the losses
-            mask = tf.sign(tf.to_float(y_flat, dtype=data_type()))
+            mask = tf.sign(tf.cast(y_flat, data_type()))
             masked_losses = mask * losses
 
             # Bring back to [B, T] shape
