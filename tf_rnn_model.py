@@ -192,16 +192,16 @@ class RNNPath(object):
 
 
 
-            embedding = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, self.embedding_dim]),
+            embedding = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, self.embedding_dim], dtype=data_type()),
                 trainable=train_word_vectors, name="word_vector")
 
-            self._embedding_placeholder = tf.placeholder(tf.float32, [self.vocab_size, self.embedding_dim])
+            self._embedding_placeholder = tf.placeholder(data_type(), [self.vocab_size, self.embedding_dim])
             self._embedding_init = embedding.assign(self._embedding_placeholder)
 
-            pron_lookup = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, self.max_pron_length]),
+            pron_lookup = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, self.max_pron_length], dtype=data_type()),
                 trainable=False, name="pron_lookup")
 
-            self._pron_lookup_placeholder = tf.placeholder(tf.float32, [self.vocab_size, self.max_pron_length])
+            self._pron_lookup_placeholder = tf.placeholder(data_type(), [self.vocab_size, self.max_pron_length])
             self._pron_lookup_init = pron_lookup.assign(self._pron_lookup_placeholder)
 
 
