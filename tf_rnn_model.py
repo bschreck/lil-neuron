@@ -68,6 +68,8 @@ flags.DEFINE_string("device", '/gpu:0',
                     "Preferred device.")
 flags.DEFINE_string("alternate_device", '/gpu:1',
                     "Preferred device.")
+flags.DEFINE_string("cpu", '/cpu:0',
+                    "Preferred device.")
 flags.DEFINE_bool("use_fp16", True,
                   "Train using 16-bit floats instead of 32bit floats")
 flags.DEFINE_bool("generate", False,
@@ -435,7 +437,7 @@ class FullLNModel(object):
                                input=self.rnn_path,
                                verse_lengths=self.verse_length,
                                config=config,
-                               device=device)
+                               device=FLAGS.cpu)
 
     @property
     def batch_size(self):
