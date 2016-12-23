@@ -66,6 +66,8 @@ flags.DEFINE_string("save_path", 'models',
                     "Model output directory.")
 flags.DEFINE_string("device", '/gpu:0',
                     "Preferred device.")
+flags.DEFINE_string("alternate_device", '/gpu:1',
+                    "Preferred device.")
 flags.DEFINE_bool("use_fp16", True,
                   "Train using 16-bit floats instead of 32bit floats")
 flags.DEFINE_bool("generate", False,
@@ -192,12 +194,14 @@ class RNNPath(object):
 
 
 
+        with tf.device(FLAGS.alternate_device):
             embedding = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, self.embedding_dim], dtype=data_type()),
                 trainable=train_word_vectors, name="word_vector")
 
             self._embedding_placeholder = tf.placeholder(data_type(), [self.vocab_size, self.embedding_dim])
             self._embedding_init = embedding.assign(self._embedding_placeholder)
 
+        with tf.device(device):
             pron_lookup = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, self.max_pron_length], dtype=data_type()),
                 trainable=False, name="pron_lookup")
 
