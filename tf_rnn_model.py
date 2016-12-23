@@ -201,7 +201,6 @@ class RNNPath(object):
             self._embedding_placeholder = tf.placeholder(data_type(), [self.vocab_size, self.embedding_dim])
             self._embedding_init = embedding.assign(self._embedding_placeholder)
 
-        with tf.device(device):
             pron_lookup = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, self.max_pron_length], dtype=data_type()),
                 trainable=False, name="pron_lookup")
 
@@ -267,6 +266,7 @@ class RNNPath(object):
             if is_training and self.keep_prob < 1:
                 rnn_input = tf.nn.dropout(rnn_input, self.keep_prob)
 
+        with tf.device(device):
             verse_lengths = tf.reshape(verse_lengths, [-1])
             verse_lengths = tf.tile(verse_lengths, [self.batch_size])
             outputs, last_states = tf.nn.dynamic_rnn(cell=cell,
@@ -515,7 +515,7 @@ class SmallConfig(Config):
     max_num_steps = 20
     hidden_size = 200
     embedding_dim = 300
-    context_embedding_dim = 300
+    context_embedding_dim = 50
     max_epoch = 4
     max_max_epoch = 13
     keep_prob = 1.0
