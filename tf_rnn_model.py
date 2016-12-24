@@ -204,7 +204,7 @@ class RNNPath(object):
                     "word_vector",
                     trainable=False,
                     partitioner=partitioner(),
-                    initializer=tf.constant(0.0),
+                    initializer=tf.constant(0.0, dtype=data_type()),
                     shape=[self.vocab_size, self.embedding_dim],
                     dtype=data_type())
 
@@ -215,7 +215,7 @@ class RNNPath(object):
                     "pron_lookup",
                     trainable=False,
                     partitioner=partitioner(),
-                    initializer=tf.constant(0.0),
+                    initializer=tf.constant(0.0, dtype=data_type()),
                     shape=[self.vocab_size, self.max_pron_length],
                     dtype=data_type())
 
