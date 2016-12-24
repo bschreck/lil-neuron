@@ -104,7 +104,7 @@ class LNInput(object):
         self.batch_size = config.batch_size
         self.max_num_steps = config.max_num_steps
         self.filename = filename
-        self._epoch_size = reader.num_batches(extractor, self.batch_size, self.max_num_steps, self.filename)
+        self._epoch_size = 50314#reader.num_batches(extractor, self.batch_size, self.max_num_steps, self.filename)
         print "epoch size:", self._epoch_size
         self.input_data, _, _ = reader.batched_data_producer(self.extractor, self.batch_size, self.max_num_steps, self.filename, name=name)
         self.verse_length = self.input_data["labels"].get_shape()[:1]
