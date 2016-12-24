@@ -80,7 +80,7 @@ flags.DEFINE_bool("train_pron_embedding", False,
                   "whether to train pronunciation embeddings")
 flags.DEFINE_bool("train_context_embedding", False,
                   "whether to train context (i.e. rap vectors) embeddings")
-flags.DEFINE_int("num_embed_shards", 8, "")
+flags.DEFINE_integer("num_embed_shards", 8, "")
 
 FLAGS = flags.FLAGS
 
