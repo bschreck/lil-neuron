@@ -660,11 +660,11 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
     embedding_init_vars = []
     if word_vectors is not None:
         embedding_init_vars.extend(model.embedding_inits)
-        for shard, placeholder in model.embedding_placeholders:
+        for shard, placeholder in enumerate(model.embedding_placeholders):
             embedding_feed_dict[placeholder] = sharded_word_vectors[shard]
     if pronunciation_vectors is not None:
         embedding_init_vars.extend(model.pron_lookup_inits)
-        for shard, placeholder in model.pron_lookup_placeholders:
+        for shard, placeholder in enumerate(model.pron_lookup_placeholders):
             embedding_feed_dict[placeholder] = sharded_pron_vectors[shard]
     session.run(embedding_init_vars,
                 feed_dict=embedding_feed_dict)
