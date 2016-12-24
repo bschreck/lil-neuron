@@ -202,8 +202,8 @@ class RNNPath(object):
 
         with tf.device(FLAGS.alternate_device):
             shard_size = int(self.vocab_size / FLAGS.num_embed_shards)
-            shard_sizes = [shard_size for _ in FLAGS.num_embed_shards]
-            shard_sizes[-1] = self.vocab_size - (shard_size * FLAGS.num_embed_shards - 1)
+            shard_sizes = [shard_size for _ in xrange(FLAGS.num_embed_shards)]
+            shard_sizes[-1] = self.vocab_size - (shard_size * (FLAGS.num_embed_shards - 1))
 
             self._embedding_placeholders = []
             self._embedding_inits = []
