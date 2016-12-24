@@ -206,7 +206,6 @@ class RNNPath(object):
                     partitioner=partitioner(),
                     init=tf.constant(0.0),
                     shape=[self.vocab_size, self.embedding_dim],
-                    partitioner=partitioner(),
                     dtype=data_type())
 
             self._embedding_placeholder = tf.placeholder(data_type(), [self.vocab_size, self.embedding_dim])
