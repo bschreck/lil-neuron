@@ -234,7 +234,7 @@ class RNNPath(object):
                 shard_pron_lookup_placeholder = tf.placeholder(data_type(), [shard_size, self.max_pron_length])
                 self._pron_lookup_placeholders.append(shard_pron_lookup_placeholder)
 
-                self._pron_lookup_inits.append(shard_pron_lookup.assign(self._pron_lookup_placeholder))
+                self._pron_lookup_inits.append(shard_pron_lookup.assign(shard_pron_lookup_placeholder))
             pron_lookup = tf.concat(0, pron_lookups)
 
 
