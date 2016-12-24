@@ -80,6 +80,7 @@ flags.DEFINE_bool("train_pron_embedding", False,
                   "whether to train pronunciation embeddings")
 flags.DEFINE_bool("train_context_embedding", False,
                   "whether to train context (i.e. rap vectors) embeddings")
+flags.DEFINE_int("num_embed_shards", 8, "")
 
 FLAGS = flags.FLAGS
 
@@ -200,26 +201,41 @@ class RNNPath(object):
 
 
         with tf.device(FLAGS.alternate_device):
-            embedding = tf.get_variable(
-                    "word_vector",
-                    trainable=False,
-                    partitioner=partitioner(),
-                    shape=[self.vocab_size, self.embedding_dim],
-                    dtype=data_type())
+            shard_size = int(self.vocab_size / FLAGS.num_embed_shards)
+            shard_sizes = [shard_size for _ in FLAGS.num_embed_shards]
+            shard_sizes[-1] = self.vocab_size - (shard_size * FLAGS.num_embed_shards - 1)
 
-            self._embedding_placeholder = tf.placeholder(data_type(), [self.vocab_size, self.embedding_dim])
-            self._embedding_init = embedding.assign(self._embedding_placeholder)
+            self._embedding_placeholders = []
+            self._embedding_inits = []
+            embeddings = []
+            for shard, shard_size in enumerate(shard_sizes):
+                shard_embedding = tf.get_variable(
+                        "word_vector_shard_{}".format(shard),
+                        trainable=False,
+                        shape=[shard_size, self.embedding_dim],
+                        dtype=data_type())
+                embeddings.append(shard_embedding)
+                shard_embedding_placeholder = tf.placeholder(data_type(), [shard_size, self.embedding_dim])
+                self._embedding_placeholders.append(shard_embedding_placeholder)
 
-            pron_lookup = tf.get_variable(
-                    "pron_lookup",
-                    trainable=False,
-                    partitioner=partitioner(),
-                    shape=[self.vocab_size, self.max_pron_length],
-                    dtype=data_type())
+                self._embedding_inits.append(shard_embedding.assign(shard_embedding_placeholder))
+            embedding = tf.concat(0, embeddings)
 
-            self._pron_lookup_placeholder = tf.placeholder(data_type(), [self.vocab_size, self.max_pron_length])
-            self._pron_lookup_init = pron_lookup.assign(self._pron_lookup_placeholder)
+            self._pron_lookup_placeholders = []
+            self._pron_lookup_inits = []
+            pron_lookups = []
+            for shard, shard_size in enumerate(shard_sizes):
+                shard_pron_lookup = tf.get_variable(
+                        "pron_lookup_shard_{}".format(shard),
+                        trainable=False,
+                        shape=[shard_size, self.max_pron_length],
+                        dtype=data_type())
+                pron_lookups.append(shard_pron_lookup)
+                shard_pron_lookup_placeholder = tf.placeholder(data_type(), [shard_size, self.max_pron_length])
+                self._pron_lookup_placeholders.append(shard_pron_lookup_placeholder)
 
+                self._pron_lookup_inits.append(pron_lookup.assign(self._pron_lookup_placeholder))
+            pron_lookup = tf.concat(0, pron_lookups)
 
 
             pronunciation_embedding = tf.get_variable("pronunciation_embedding_W",
@@ -309,17 +325,17 @@ class RNNPath(object):
     def output_size(self):
         return self.rnn_size
     @property
-    def embedding_placeholder(self):
-        return self._embedding_placeholder
+    def embedding_placeholders(self):
+        return self._embedding_placeholders
     @property
-    def embedding_init(self):
-        return self._embedding_init
+    def embedding_inits(self):
+        return self._embedding_inits
     @property
-    def pron_lookup_placeholder(self):
-        return self._pron_lookup_placeholder
+    def pron_lookup_placeholders(self):
+        return self._pron_lookup_placeholders
     @property
-    def pron_lookup_init(self):
-        return self._pron_lookup_init
+    def pron_lookup_inits(self):
+        return self._pron_lookup_inits
 
 class Learn(object):
     def __init__(self, is_training, config, labels, input, verse_lengths,
@@ -496,17 +512,17 @@ class FullLNModel(object):
         return self.learn.train_op
 
     @property
-    def embedding_placeholder(self):
-        return self.rnn_path.embedding_placeholder
+    def embedding_placeholders(self):
+        return self.rnn_path.embedding_placeholders
     @property
-    def embedding_init(self):
-        return self.rnn_path.embedding_init
+    def embedding_inits(self):
+        return self.rnn_path.embedding_inits
     @property
-    def pron_lookup_placeholder(self):
-        return self.rnn_path.pron_lookup_placeholder
+    def pron_lookup_placeholders(self):
+        return self.rnn_path.pron_lookup_placeholders
     @property
-    def pron_lookup_init(self):
-        return self.rnn_path.pron_lookup_init
+    def pron_lookup_inits(self):
+        return self.rnn_path.pron_lookup_inits
 
 class Config(object):
     def __init__(self, vocab_size, rap_vec_size, num_rappers, max_pron_length):
@@ -612,6 +628,16 @@ def get_valid_file():
 def get_test_file():
     return FLAGS.test_filename
 
+def shard_array(array, num_shards):
+    shard_size = int(array.shape[0] / num_shards)
+    sharded_arrays = []
+    for i in xrange(num_shards):
+        if i == num_shards - 1:
+            shard = array[i * shard_size :]
+        else:
+            shard = array[i * shard_size : (i+1) * shard_size]
+        sharded_arrays.append(shard)
+    return sharded_arrays
 
 def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eval_op=None, verbose=False):
     """Runs the model on the given data."""
@@ -627,14 +653,19 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
     if eval_op is not None:
         fetches["eval_op"] = eval_op
 
+    sharded_word_vectors = shard_array(word_vectors, FLAGS.num_embed_shards)
+    sharded_pron_vectors = shard_array(pronunciation_vectors, FLAGS.num_embed_shards)
+
     embedding_feed_dict = {}
     embedding_init_vars = []
     if word_vectors is not None:
-        embedding_init_vars.append(model.embedding_init)
-        embedding_feed_dict[model.embedding_placeholder] = word_vectors
+        embedding_init_vars.extend(model.embedding_inits)
+        for shard, placeholder in model.embedding_placeholders:
+            embedding_feed_dict[placeholder] = sharded_word_vectors[shard]
     if pronunciation_vectors is not None:
-        embedding_init_vars.append(model.pron_lookup_init)
-        embedding_feed_dict[model.pron_lookup_placeholder] = pronunciation_vectors
+        embedding_init_vars.extend(model.pron_lookup_inits)
+        for shard, placeholder in model.pron_lookup_placeholders:
+            embedding_feed_dict[placeholder] = sharded_pron_vectors[shard]
     session.run(embedding_init_vars,
                 feed_dict=embedding_feed_dict)
 
