@@ -87,6 +87,9 @@ FLAGS = flags.FLAGS
 def data_type():
     return tf.float16 if FLAGS.use_fp16 else tf.float32
 
+def partitioner():
+    max_shard_bytes = (64 << 20) - 1
+    return tf.variable_axis_size_partitioner(max_shard_bytes, axis=0, bytes_per_string_element=16, max_shards=None)
 
 def initializer():
     return tf.contrib.layers.variance_scaling_initializer(dtype=data_type())
@@ -197,14 +200,25 @@ class RNNPath(object):
 
 
         with tf.device(FLAGS.alternate_device):
-            embedding = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, self.embedding_dim], dtype=data_type()),
-                trainable=train_word_vectors, name="word_vector")
+            embedding = tf.get_variable(
+                    "word_vector",
+                    trainable=False,
+                    partitioner=partitioner(),
+                    init=tf.constant(0.0),
+                    shape=[self.vocab_size, self.embedding_dim],
+                    partitioner=partitioner(),
+                    dtype=data_type())
 
             self._embedding_placeholder = tf.placeholder(data_type(), [self.vocab_size, self.embedding_dim])
             self._embedding_init = embedding.assign(self._embedding_placeholder)
 
-            pron_lookup = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, self.max_pron_length], dtype=data_type()),
-                trainable=False, name="pron_lookup")
+            pron_lookup = tf.get_variable(
+                    "pron_lookup",
+                    trainable=False,
+                    partitioner=partitioner(),
+                    init=tf.constant(0.0),
+                    shape=[self.vocab_size, self.max_pron_length],
+                    dtype=data_type())
 
             self._pron_lookup_placeholder = tf.placeholder(data_type(), [self.vocab_size, self.max_pron_length])
             self._pron_lookup_init = pron_lookup.assign(self._pron_lookup_placeholder)
@@ -328,11 +342,13 @@ class Learn(object):
 
 
             softmax_b = tf.get_variable("softmax_b", [self.vocab_size], dtype=data_type())
+
             print "vocab size:", self.vocab_size
             softmax_W = tf.get_variable(
                 name="softmax_w",
                 initializer=initializer(),
                 shape=[final_unit_size, self.vocab_size],
+                partitioner=partitioner(),
                 dtype=data_type())
 
 
