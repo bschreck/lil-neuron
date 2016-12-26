@@ -17,7 +17,7 @@ import re
 try:
     from pymongo import MongoClient
     client = MongoClient()
-    from generate_lyric_files import load_all_pronunciations
+    from generate_lyric_files import load_all_pronunciations, format_rapper_name
 except:
     pass
 
@@ -63,6 +63,7 @@ class RapFeatureExtractor(object):
         self._load_spellcheck_dict(spellcheck_dicts)
 
         if from_config:
+            print "loading syms from config"
             self._load_syms_from_config()
         else:
             self._load_special_symbols()
@@ -83,7 +84,7 @@ class RapFeatureExtractor(object):
                                        {'vector': True, 'name': True})
         rap_vecs = {}
         for r in records:
-            name = r['name']
+            name = format_rapper_name(r['name'])
             rap_vecs[name] = np.array(r['vector'])
             self.get_word_sym(name)
         self.rapper_vectors = rap_vecs
@@ -397,7 +398,8 @@ class RapFeatureExtractor(object):
             to_batch[c] = tf.tile(tf.expand_dims(casted_tensors[c], 0),
                                   multiples)
 
-        init_op_local = tf.initialize_local_variables()
+        #init_op_local = tf.initialize_local_variables()
+        init_op_local = tf.local_variables_initializer()
         return to_batch, init_op_local
 
     def cast_tensors(self, context, sequence):
@@ -412,9 +414,9 @@ class RapFeatureExtractor(object):
 
 
 if __name__ == '__main__':
-    train_corpus = 'data/train_corpus.txt'
-    valid_corpus = 'data/valid_corpus.txt'
-    test_corpus = 'data/test_corpus.txt'
+    train_corpus = 'data/train_corpus_tokenized.txt'
+    valid_corpus = 'data/valid_corpus_tokenized.txt'
+    test_corpus = 'data/test_corpus_tokenized.txt'
     extractor = RapFeatureExtractor(train_corpus=train_corpus,
                                     valid_corpus=valid_corpus,
                                     test_corpus=test_corpus,

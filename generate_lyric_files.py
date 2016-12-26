@@ -114,13 +114,16 @@ def make_single_corpus_file(filenames, output_filename):
                     # TODO: remove if I redo lyric files
                     if line.lstrip().startswith('(NRP:'):
                         words = line.split('(NRP:')
-                        rappers = [w.replace(")", "").strip().replace(' ', '_').lower()
+                        rappers = [format_rapper_name(w.replace(")", "").strip())
                                    for w in words if w]
                         line = '<nrp:{}>\n<eos>\n'.format(';'.join(rappers))
                     else:
                         line += '\n<eos>\n'
                     out.write(line)
                 out.write('\n<eor>\n')
+
+def format_rapper_name(rapper):
+    return rapper.replace(' ', '_').lower()
 
 
 def word_numbers(num):

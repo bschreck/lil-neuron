@@ -11,7 +11,7 @@ def batched_data_producer(extractor, batch_size, max_num_steps, filename, num_ep
         enqueue_many=True,
         batch_size=max_num_steps,
         dynamic_pad=True,
-        allow_smaller_final_batch=True,
+        allow_smaller_final_batch=False,
         name="num_steps_batch"
     )
     batch2 = tf.train.batch(
@@ -22,7 +22,8 @@ def batched_data_producer(extractor, batch_size, max_num_steps, filename, num_ep
         allow_smaller_final_batch=False,
         name="batch_size_batch"
     )
-    init_op_local2 = tf.initialize_local_variables()
+    #init_op_local2 = tf.initialize_local_variables()
+    init_op_local2 = tf.local_variables_initializer()
     return batch2, init_op_local, init_op_local2
 
 
@@ -56,7 +57,8 @@ def run_one_epoch(inner_func, extractor, batch_size, max_num_steps, fname):
         tf_config = tf.ConfigProto(allow_soft_placement=True,
                                    inter_op_parallelism_threads=20)
 
-        initializer = tf.initialize_all_variables()
+        #initializer = tf.initialize_all_variables()
+        initializer = tf.global_variables_initializer()
         with tf.Session(config=tf_config) as sess:
             # Initialize the the epoch counter
             sess.run([initializer, init_op_local, init_op_local2])
@@ -84,12 +86,14 @@ def run_one_epoch(inner_func, extractor, batch_size, max_num_steps, fname):
 
 
 if __name__ == '__main__':
-    extractor = RapFeatureExtractor(train_filenames=[],
-                                    valid_filenames=[],
-                                    from_config=True,
-                                    config_file='data/config_new.p')
+    extractor = RapFeatureExtractor(from_config=True,
+                                    config_file='data/config_tiny.p',
+                                    pronunciation_vectors_file=None,
+                                    word_vectors_file=None,
+                                    load_word_vectors_from_file=False,
+                                    load_pronunciation_vectors_from_file=False)
     batch_size = 2
-    max_num_steps = 100
-    fname = 'data/tf_train_data.txt'
-    batches = run_and_return_batches(extractor, 100, batch_size, max_num_steps, fname)
+    max_num_steps = 2
+    fname = 'data/tf_train_data_tiny.txt'
+    batches = run_and_return_batches(extractor, 1, batch_size, max_num_steps, fname)
     pdb.set_trace()

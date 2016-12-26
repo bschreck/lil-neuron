@@ -6,6 +6,7 @@ import copy
 
 import tf_reader as reader
 from extract_features import RapFeatureExtractor
+from generate_lyric_files import format_rapper_name
 
 import pdb
 
@@ -70,7 +71,7 @@ flags.DEFINE_string("alternate_device", '/gpu:1',
                     "Preferred device.")
 flags.DEFINE_string("cpu", '/cpu:0',
                     "Preferred device.")
-flags.DEFINE_bool("use_fp16", True,
+flags.DEFINE_bool("use_fp16", False,
                   "Train using 16-bit floats instead of 32bit floats")
 flags.DEFINE_bool("generate", False,
                   "If True, generate text instead of training")
@@ -81,6 +82,11 @@ flags.DEFINE_bool("train_pron_embedding", False,
 flags.DEFINE_bool("train_context_embedding", False,
                   "whether to train context (i.e. rap vectors) embeddings")
 flags.DEFINE_integer("num_embed_shards", 8, "")
+
+flags.DEFINE_string("find_epoch_size", False, "")
+flags.DEFINE_integer("train_epoch_size", 50314, "")
+flags.DEFINE_integer("valid_epoch_size", 0, "")
+flags.DEFINE_integer("test_epoch_size", 0, "")
 
 FLAGS = flags.FLAGS
 
@@ -99,15 +105,17 @@ def initializer():
 class LNInput(object):
     """The input data."""
 
-    def __init__(self, extractor, config, filename, name=None):
+    def __init__(self, extractor, config, filename, epoch_size=None, name=None):
         self.extractor = extractor
         self.batch_size = config.batch_size
         self.max_num_steps = config.max_num_steps
         self.filename = filename
-        self._epoch_size = 50314#reader.num_batches(extractor, self.batch_size, self.max_num_steps, self.filename)
+        if FLAGS.find_epoch_size:
+            self._epoch_size = reader.num_batches(extractor, self.batch_size, self.max_num_steps, self.filename)
+        else:
+            self._epoch_size = epoch_size
         print "epoch size:", self._epoch_size
         self.input_data, _, _ = reader.batched_data_producer(self.extractor, self.batch_size, self.max_num_steps, self.filename, name=name)
-        self.verse_length = self.input_data["labels"].get_shape()[:1]
 
     @property
     def epoch_size(self):
@@ -124,7 +132,6 @@ class GeneratorInput(object):
         self.extractor = extractor
         self.batch_size = config.batch_size
         self.input_data = input_data
-        self.verse_length = input_data["words"].get_shape()[:1]
         self._epoch_size = 1
 
     @property
@@ -143,9 +150,8 @@ class GeneratorInput(object):
 
 
 class RNNInput(object):
-    def __init__(self, words, verse_lengths, context, context_size):
+    def __init__(self, words, context, context_size):
         self.words = words
-        self.verse_lengths = verse_lengths
         self.context = context
         self.context_size = context_size
 
@@ -163,7 +169,7 @@ class RNNPath(object):
         self.device = device
         self._input = input_
         words = input_.words
-        verse_lengths = input_.verse_lengths
+
         self.context = input_.context
         self.context_size = input_.context_size
 
@@ -211,7 +217,7 @@ class RNNPath(object):
             for shard, shard_size in enumerate(shard_sizes):
                 shard_embedding = tf.get_variable(
                         "word_vector_shard_{}".format(shard),
-                        trainable=False,
+                        trainable=train_word_vectors,
                         shape=[shard_size, self.embedding_dim],
                         dtype=data_type())
                 embeddings.append(shard_embedding)
@@ -263,13 +269,17 @@ class RNNPath(object):
 
             word_embed_inputs = tf.nn.embedding_lookup(embedding, words)
             pron_inputs = tf.nn.embedding_lookup(pron_lookup, words)
-            flat_pron_inputs = tf.reshape(pron_inputs, [self.batch_size * self.max_num_steps, self.max_pron_length])
+            flat_pron_inputs = tf.reshape(pron_inputs, [-1, self.max_pron_length])
+            self.flat_pron_inputs = flat_pron_inputs
             pron_embed_inputs = tf.batch_matmul(flat_pron_inputs, pronunciation_embedding) + pronunciation_b
-            flat_context_inputs = tf.reshape(self.context, [self.batch_size * self.max_num_steps, self.context_size])
+            flat_context_inputs = tf.reshape(self.context,
+                                             [-1, self.context_size])
             context_embed_inputs = tf.batch_matmul(tf.cast(flat_context_inputs, data_type()), context_embedding) + context_b
 
-            pron_embed_inputs = tf.reshape(pron_embed_inputs, [self.batch_size, self.max_num_steps, self.embedding_dim])
-            context_embed_inputs = tf.reshape(context_embed_inputs, [self.batch_size, self.max_num_steps, self.context_embedding_dim])
+            pron_embed_inputs = tf.reshape(pron_embed_inputs,
+                                           [self.batch_size, -1, self.embedding_dim])
+            context_embed_inputs = tf.reshape(context_embed_inputs,
+                                              [self.batch_size, -1, self.context_embedding_dim])
             # TODO: try dropout, nonlinearity
 
 
@@ -287,23 +297,22 @@ class RNNPath(object):
                                            shape=[self.rnn_size],
                                            trainable=True,
                                            dtype=data_type())
-            combined_flattened = tf.reshape(combined, [self.batch_size * self.max_num_steps, full_embedded_input_size])
+            combined_flattened = tf.reshape(combined, [-1, full_embedded_input_size])
             rnn_input = tf.batch_matmul(combined_flattened, resize_layer_w) + resize_layer_b
-            rnn_input = tf.reshape(rnn_input, [self.batch_size, self.max_num_steps, self.rnn_size])
+            rnn_input = tf.reshape(rnn_input, [self.batch_size, -1, self.rnn_size])
 
 
             if is_training and self.keep_prob < 1:
                 rnn_input = tf.nn.dropout(rnn_input, self.keep_prob)
 
         with tf.device(device):
-            verse_lengths = tf.reshape(verse_lengths, [-1])
-            verse_lengths = tf.tile(verse_lengths, [self.batch_size])
             outputs, last_states = tf.nn.dynamic_rnn(cell=cell,
                                                      dtype=data_type(),
-                                                     sequence_length=verse_lengths,
+                                                     #sequence_length=verse_lengths,
                                                      inputs=rnn_input)
             self._final_state = last_states
             self._outputs = outputs
+
 
     @property
     def input(self):
@@ -337,8 +346,9 @@ class RNNPath(object):
     def pron_lookup_inits(self):
         return self._pron_lookup_inits
 
+
 class Learn(object):
-    def __init__(self, is_training, config, labels, input, verse_lengths,
+    def __init__(self, is_training, config, labels, input,
                  device=FLAGS.device):
         self.rnn_path = input
         self.context = input.context
@@ -379,10 +389,11 @@ class Learn(object):
 
             # Bring back to [B, T] shape
             masked_losses = tf.reshape(masked_losses, tf.shape(labels))
+            self.losses = masked_losses
 
             # Calculate mean loss
-            mean_loss_by_example = tf.reduce_sum(masked_losses, reduction_indices=1) / tf.cast(verse_lengths, data_type())
-            mean_loss = tf.reduce_mean(mean_loss_by_example)
+            mean_loss = tf.reduce_sum(masked_losses, reduction_indices=1)
+            mean_loss = tf.reduce_mean(mean_loss)
             self._cost = cost = mean_loss
 
             self._probs_flat = None
@@ -437,6 +448,7 @@ class Learn(object):
         return self._train_op
 
 
+
 class FullLNModel(object):
     def __init__(self, is_training, config, input_, device=FLAGS.device):
         self.input_ = input_
@@ -451,8 +463,7 @@ class FullLNModel(object):
 
         self.rnn_input = RNNInput(words=input_.words,
                              context=context,
-                             context_size = num_rappers * self.config.rap_vec_size,
-                             verse_lengths=self.verse_length)
+                             context_size = num_rappers * self.config.rap_vec_size)
         with tf.variable_scope("RNNPath"):
             self.rnn_path = RNNPath(is_training=is_training,
                                     input_=self.rnn_input,
@@ -464,17 +475,12 @@ class FullLNModel(object):
             self.learn = Learn(is_training=is_training,
                                labels=labels,
                                input=self.rnn_path,
-                               verse_lengths=self.verse_length,
                                config=config,
                                device=FLAGS.cpu)
 
     @property
     def batch_size(self):
         return self.config.batch_size
-
-    @property
-    def verse_length(self):
-        return self.input_.verse_length
 
     @property
     def input_tensors(self):
@@ -524,16 +530,25 @@ class FullLNModel(object):
     def pron_lookup_inits(self):
         return self.rnn_path.pron_lookup_inits
 
+    @property
+    def context(self):
+        return self.learn.context
+
 class Config(object):
     def __init__(self, vocab_size, rap_vec_size, num_rappers, max_pron_length):
         self.vocab_size = vocab_size
         self.rap_vec_size = rap_vec_size
         self.num_rappers = num_rappers
         self.max_pron_length = max_pron_length
+        self.original_batch_size = self.batch_size
+        self.original_max_num_steps = self.max_num_steps
 
     def to_eval_gen_config(self):
         config = copy.copy(self)
+        config.original_batch_size = config.batch_size
+        config.original_max_num_steps = config.max_num_steps
         config.batch_size = 1
+        config.max_num_steps = 1
         return config
 
 
@@ -599,7 +614,7 @@ class TestConfig(Config):
     embedding_dim = 300
     context_embedding_dim = 300
     max_epoch = 1
-    max_max_epoch = 1
+    max_max_epoch = 3
     keep_prob = 1.0
     lr_decay = 0.5
     batch_size = 4
@@ -639,7 +654,7 @@ def shard_array(array, num_shards):
         sharded_arrays.append(shard)
     return sharded_arrays
 
-def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eval_op=None, verbose=False):
+def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eval_op=None, verbose=False, extractor=None):
     """Runs the model on the given data."""
     start_time = time.time()
     costs = 0.0
@@ -649,6 +664,7 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
     fetches = {
         "cost": model.cost,
         "final_state": model.final_state,
+        "context": model.context,
     }
     if eval_op is not None:
         fetches["eval_op"] = eval_op
@@ -666,11 +682,13 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
         embedding_init_vars.extend(model.pron_lookup_inits)
         for shard, placeholder in enumerate(model.pron_lookup_placeholders):
             embedding_feed_dict[placeholder] = sharded_pron_vectors[shard]
+
     session.run(embedding_init_vars,
                 feed_dict=embedding_feed_dict)
 
+
+    feed_dict = {}
     for step in range(model.input.epoch_size):
-        feed_dict = {}
         for i, (c, h) in enumerate(model.initial_state):
             feed_dict[c] = state[i].c
             feed_dict[h] = state[i].h
@@ -678,19 +696,19 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
         vals = session.run(fetches, feed_dict)
         cost = vals["cost"]
         state = vals["final_state"]
-        verse_length = model.verse_length.as_list()[0]
 
+        verse_length = model.input.max_num_steps
         costs += cost
-        iters += verse_length * model.batch_size
+        iters += verse_length
 
         every10 = model.input.epoch_size // 10
         print_output = (every10 == 0 or step % every10 == 10)
         if verbose and print_output:
             print("%.3f perplexity: %.3f speed: %.0f wps" %
-                  (step * 1.0 / model.input.epoch_size, np.exp(costs / verse_length),
-                   iters / (time.time() - start_time)))
+                  (step * 1.0 / model.input.epoch_size, np.exp(costs / iters),
+                   iters * model.batch_size / (time.time() - start_time)))
 
-    return np.exp(costs / verse_length)
+    return np.exp(costs / iters)
 
 def generate_text(extractor, gen_config, rappers, starter):
     with tf.Graph().as_default():
@@ -698,13 +716,15 @@ def generate_text(extractor, gen_config, rappers, starter):
                                                     gen_config.init_scale)
         with tf.name_scope("Train"):
             words = ["<eos>", "<eov>", "<eor>"]
+            rappers = [format_rapper_name(r) for r in rappers]
             words.append("<nrp:{}>".format(';'.join(rappers)))
             starter = starter.replace(". ", " <eos> ").replace('\n', ' ').split()
             words.extend(starter)
             tensor_dict, input_data, init_op_local = extractor.gen_features_from_starter(rappers, words)
 
             gen_input = GeneratorInput(extractor=extractor, config=gen_config,
-                                       input_data=tensor_dict, name="GeneratorInput")
+                                       input_data=tensor_dict,
+                                       name="GeneratorInput")
             with tf.variable_scope("Model", reuse=None, initializer=initializer):
                 m = FullLNModel(is_training=False, config=gen_config,
                                 input_=gen_input)
@@ -727,6 +747,7 @@ def generate_text(extractor, gen_config, rappers, starter):
 
             end_of_rap = False
             first_time = True
+
             while not end_of_rap:
                 feed_dict = {}
                 for i, (c, h) in enumerate(m.initial_state):
@@ -783,7 +804,18 @@ def main(argv):
 
     if len(argv) > 1:
         FLAGS.model = argv[1]
-
+        if FLAGS.model == "test":
+            FLAGS.train_filename = "data/tf_data_tiny.txt"
+            FLAGS.valid_filename = "data/tf_data_tiny.txt"
+            FLAGS.test_filename  = "data/tf_data_tiny.txt"
+            FLAGS.processed_word_vector_file = "data/processed_word_vector_array_tiny.p"
+            FLAGS.processed_pron_vector_file = "data/processed_pron_vector_array_tiny.p"
+            FLAGS.extractor_config_file = "data/config_tiny.p"
+            FLAGS.train_epoch_size = 25
+            FLAGS.valid_epoch_size = 25
+            FLAGS.test_epoch_size = 200
+            FLAGS.find_epoch_size = True
+        FLAGS.save_path = "{}_models".format(FLAGS.model)
     if len(argv) > 2 and argv[2].startswith('g'):
         FLAGS.generate = True
     else:
@@ -801,14 +833,17 @@ def main(argv):
     #    then when generating rap lyrics, at each time point
     #    sample from the different semantic models (a semantic model is the word embedding)
     #    while always using the rap pronunciation embedding
+    print "initializing extractor"
     extractor = RapFeatureExtractor(from_config=True,
                                     config_file=FLAGS.extractor_config_file,
                                     pronunciation_vectors_file=FLAGS.processed_pron_vector_file,
                                     load_word_vectors_from_file=True,
                                     word_vectors_file=FLAGS.processed_word_vector_file,
                                     load_pronunciation_vectors_from_file=True)
+    print "loading embeddings"
     pronunciation_vectors, max_pron_length = extractor.load_pronunciation_vectors()
     word_vectors = extractor.load_glove_vectors()#FLAGS.word_vector_file)
+    print "initializing config"
 
     vocab_size = extractor.vocab_length + 1
     rap_vec_size = extractor.len_rapper_vector
@@ -820,8 +855,8 @@ def main(argv):
     eval_gen_config = config.to_eval_gen_config()
 
     if FLAGS.generate:
-        rappers = ["Tyler, The Creator"]
-        starter = "I eat people"
+        rappers = ["G-Eazy"]
+        starter = "I am"
         generate_text(extractor, eval_gen_config, rappers, starter)
         return
 
@@ -830,7 +865,9 @@ def main(argv):
         init = initializer()
 
         with tf.name_scope("Train"):
-            train_ln_input = LNInput(extractor=extractor, config=config, filename=train_filename, name="TrainInput")
+            train_ln_input = LNInput(extractor=extractor, config=config,
+                                     filename=train_filename, name="TrainInput",
+                                     epoch_size=FLAGS.train_epoch_size)
             print "initializing training model:"
             with tf.variable_scope("Model", reuse=None, initializer=init):
                 m = FullLNModel(is_training=True, config=config, input_=train_ln_input)
@@ -838,13 +875,19 @@ def main(argv):
             tf.scalar_summary("Learning Rate", m.lr)
         with tf.name_scope("Valid"):
             print "initializing valid model:"
-            valid_ln_input = LNInput(extractor=extractor, config=config, filename=valid_filename, name="ValidInput")
+            valid_ln_input = LNInput(extractor=extractor, config=config,
+                                     filename=valid_filename, name="ValidInput",
+                                     epoch_size=FLAGS.valid_epoch_size)
             with tf.variable_scope("Model", reuse=True, initializer=init):
-                mvalid = FullLNModel(is_training=False, config=config, input_=valid_ln_input)
+                mvalid = FullLNModel(is_training=False, config=config,
+                                     input_=valid_ln_input)
             tf.scalar_summary("Validation Loss", mvalid.cost)
         with tf.name_scope("Test"):
             print "initializing test model:"
-            test_ln_input = LNInput(extractor=extractor, config=eval_gen_config, filename=test_filename, name="TestInput")
+            test_ln_input = LNInput(extractor=extractor, config=eval_gen_config,
+                                    filename=test_filename, name="TestInput",
+                                    epoch_size=FLAGS.test_epoch_size)
+            print "TEST EPOCH SIZE:", test_ln_input.epoch_size
             with tf.variable_scope("Model", reuse=True, initializer=init):
                 mtest = FullLNModel(is_training=False, config=eval_gen_config,
                                     input_=test_ln_input)
@@ -859,12 +902,12 @@ def main(argv):
 
                 print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
                 train_perplexity = run_epoch(session, m, word_vectors, pronunciation_vectors, eval_op=m.train_op,
-                                             verbose=True)
+                                             verbose=True, extractor=extractor)
                 print("Epoch: %d Train Perplexity: %.3f" % (i + 1, train_perplexity))
-                valid_perplexity = run_epoch(session, mvalid)
+                valid_perplexity = run_epoch(session, mvalid, word_vectors, pronunciation_vectors)
                 print("Epoch: %d Valid Perplexity: %.3f" % (i + 1, valid_perplexity))
 
-            test_perplexity = run_epoch(session, mtest)
+            test_perplexity = run_epoch(session, mtest, word_vectors, pronunciation_vectors)
             print("Test Perplexity: %.3f" % test_perplexity)
 
             if FLAGS.save_path:
