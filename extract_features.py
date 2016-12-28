@@ -239,8 +239,11 @@ class RapFeatureExtractor(object):
                 verse_word_symbols.append(word_symbol)
 
                 if word == '<eov>':
+                    rap_vecs = verse_rap_vecs
+                    if rap_vecs is None:
+                        rap_vecs = [np.zeros(self.len_rapper_vector)] * self.max_nrps
                     seq, labels, context = self.make_feature_dict(verse_word_symbols,
-                                                                  verse_rap_vecs,
+                                                                  rap_vecs,
                                                                   as_lm=True)
                     yield seq, labels, context
                     verse_word_symbols = []
