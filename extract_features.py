@@ -401,8 +401,8 @@ class RapFeatureExtractor(object):
             to_batch[c] = tf.tile(tf.expand_dims(casted_tensors[c], 0),
                                   multiples)
 
-        #init_op_local = tf.initialize_local_variables()
-        init_op_local = tf.local_variables_initializer()
+        init_op_local = tf.initialize_local_variables()
+        #init_op_local = tf.local_variables_initializer()
         return to_batch, init_op_local
 
     def cast_tensors(self, context, sequence):
