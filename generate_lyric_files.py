@@ -1,4 +1,14 @@
-from pymongo import MongoClient
+try:
+    from pymongo import MongoClient
+    from nltk.tokenize import StanfordTokenizer
+    from nltk.corpus.reader.cmudict import CMUDictCorpusReader
+    from spell_checker import SpellChecker
+    import inflect
+    from find_pronunciations import all_phones
+    inflect_engine = inflect.engine()
+except:
+    pass
+
 import time
 import string
 import os
@@ -7,12 +17,6 @@ import cPickle as pck
 import pdb
 from collections import Counter, defaultdict
 import re
-from nltk.tokenize import StanfordTokenizer
-from nltk.corpus.reader.cmudict import CMUDictCorpusReader
-from spell_checker import SpellChecker
-import inflect
-from find_pronunciations import all_phones
-inflect_engine = inflect.engine()
 
 
 def mkdir_recursive(path):
