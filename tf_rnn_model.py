@@ -193,7 +193,7 @@ class RNNPath(object):
         self.max_num_steps = config.max_num_steps
         self.max_pron_length = config.max_pron_length
 
-        with tf.device(device):
+        with tf.device('/cpu:0'):
             # Can experiment with different settings
             lstm_args = dict(use_peepholes=False,
                              cell_clip=None,
@@ -216,7 +216,7 @@ class RNNPath(object):
 
 
 
-        with tf.device(FLAGS.alternate_device):
+        with tf.device('/cpu:0'):
             shard_size = int(self.vocab_size / FLAGS.num_embed_shards)
             shard_sizes = [shard_size for _ in xrange(FLAGS.num_embed_shards)]
             shard_sizes[-1] = self.vocab_size - (shard_size * (FLAGS.num_embed_shards - 1))
@@ -251,6 +251,7 @@ class RNNPath(object):
                 self._pron_lookup_placeholders.append(shard_pron_lookup_placeholder)
 
                 self._pron_lookup_inits.append(shard_pron_lookup.assign(shard_pron_lookup_placeholder))
+
             pron_lookup = tf.concat(0, pron_lookups)
 
 
@@ -276,7 +277,18 @@ class RNNPath(object):
                                               trainable=train_context_embedding,
                                               dtype=data_type())
 
-
+            full_embedded_input_size = 2*self.embedding_dim + self.context_embedding_dim
+            resize_layer_w = tf.get_variable("rnn_resize_w",
+                                           initializer=initializer(),
+                                           shape=[full_embedded_input_size, self.rnn_size],
+                                           trainable=True,
+                                           dtype=data_type())
+            resize_layer_b = tf.get_variable("rnn_resize_b",
+                                           initializer=initializer(),
+                                           shape=[self.rnn_size],
+                                           trainable=True,
+                                           dtype=data_type())
+	with tf.device('/gpu:0'):
             word_embed_inputs = tf.nn.embedding_lookup(embedding, words)
             pron_inputs = tf.nn.embedding_lookup(pron_lookup, words)
             flat_pron_inputs = tf.reshape(pron_inputs, [-1, self.max_pron_length])
@@ -296,17 +308,7 @@ class RNNPath(object):
 
             combined = tf.concat(2, [word_embed_inputs, pron_embed_inputs, context_embed_inputs])
 
-            full_embedded_input_size = 2*self.embedding_dim + self.context_embedding_dim
-            resize_layer_w = tf.get_variable("rnn_resize_w",
-                                           initializer=initializer(),
-                                           shape=[full_embedded_input_size, self.rnn_size],
-                                           trainable=True,
-                                           dtype=data_type())
-            resize_layer_b = tf.get_variable("rnn_resize_b",
-                                           initializer=initializer(),
-                                           shape=[self.rnn_size],
-                                           trainable=True,
-                                           dtype=data_type())
+
             combined_flattened = tf.reshape(combined, [-1, full_embedded_input_size])
             rnn_input = tf.batch_matmul(combined_flattened, resize_layer_w) + resize_layer_b
             rnn_input = tf.reshape(rnn_input, [self.batch_size, -1, self.rnn_size])
@@ -315,7 +317,6 @@ class RNNPath(object):
             if is_training and self.keep_prob < 1:
                 rnn_input = tf.nn.dropout(rnn_input, self.keep_prob)
 
-        with tf.device(device):
             outputs, last_states = tf.nn.dynamic_rnn(cell=cell,
                                                      dtype=data_type(),
                                                      #sequence_length=verse_lengths,
@@ -365,14 +366,15 @@ class Learn(object):
         self.context_size = input.context_size
         self.vocab_size = config.vocab_size
 
-        with tf.device(device):
             #verse_len = tf.shape(self.rnn_path.outputs)[1]
+        with tf.device('/gpu:0'):
 
             final_unit_size = self.rnn_path.output_size + self.context_size
 
             concat = tf.concat(2, [self.rnn_path.outputs, tf.cast(self.context, data_type())])
             outputs_flat = tf.reshape(concat, [-1, final_unit_size])
 
+        with tf.device('/cpu:0'):
 
             softmax_b = tf.get_variable("softmax_b", [self.vocab_size], dtype=data_type())
 
@@ -385,6 +387,7 @@ class Learn(object):
                 dtype=data_type())
 
 
+        with tf.device('/gpu:0'):
             # Calculate logits and probs
             # Reshape so we can calculate them all at once
             logits_flat = tf.batch_matmul(outputs_flat, softmax_W) + softmax_b
@@ -411,7 +414,9 @@ class Learn(object):
                 self._probs_flat = tf.nn.softmax(logits_flat)
                 return
 
+	with tf.device('/cpu:0'):
             self._lr = tf.get_variable("learning_rate", shape=[], trainable=False, dtype=data_type())
+	with tf.device('/gpu:0'):
             tvars = tf.trainable_variables()
             aggmeth = tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N
             grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars,
@@ -422,6 +427,7 @@ class Learn(object):
                 zip(grads, tvars),
                 global_step=tf.contrib.framework.get_or_create_global_step())
 
+	with tf.device('/cpu:0'):
             self._new_lr = tf.placeholder(
                 data_type(), shape=[], name="new_learning_rate")
             self._lr_update = tf.assign(self._lr, self._new_lr)
@@ -465,6 +471,7 @@ class FullLNModel(object):
         self.config = config
         num_rappers = config.num_rappers
         rappers = []
+
         for r in xrange(num_rappers):
             rappers.append(input_["rapper" + str(r)])
         context = tf.concat(2, rappers)
@@ -587,15 +594,15 @@ class MediumConfig(Config):
     max_grad_norm = 5
     num_layers = 2
     phase_2_num_layers = 3
-    max_num_steps = 35
+    max_num_steps = 30
     hidden_size = 650
     embedding_dim = 300
-    context_embedding_dim = 300
+    context_embedding_dim = 50
     max_epoch = 6
     max_max_epoch = 39
     keep_prob = 0.5
     lr_decay = 0.8
-    batch_size = 20
+    batch_size = 10
 
 
 class LargeConfig(Config):
@@ -605,15 +612,15 @@ class LargeConfig(Config):
     max_grad_norm = 10
     num_layers = 2
     phase_2_num_layers = 3
-    max_num_steps = 35
+    max_num_steps = 30
     hidden_size = 1500
     embedding_dim = 300
-    context_embedding_dim = 300
+    context_embedding_dim = 100
     max_epoch = 14
     max_max_epoch = 55
     keep_prob = 0.35
     lr_decay = 1 / 1.15
-    batch_size = 20
+    batch_size = 15
 
 
 class TestConfig(Config):
@@ -715,8 +722,8 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
         costs += cost
         iters += verse_length
 
-        every10 = model.input.epoch_size // 10
-        print_output = (every10 == 0 or step % every10 == 10)
+        every10 = model.input.epoch_size // 1000
+        print_output = (step == 0 or step % every10 == 0)
         if verbose and print_output:
             print("%.3f perplexity: %.3f speed: %.0f wps" %
                   (step * 1.0 / model.input.epoch_size, np.exp(costs / iters),
