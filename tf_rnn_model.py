@@ -715,8 +715,8 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
         costs += cost
         iters += verse_length
 
-        every10 = model.input.epoch_size // 10
-        print_output = (every10 == 0 or step % every10 == 10)
+        every10 = model.input.epoch_size // 1000
+        print_output = (step == 0 or step % every10 == 0)
         if verbose and print_output:
             print("%.3f perplexity: %.3f speed: %.0f wps" %
                   (step * 1.0 / model.input.epoch_size, np.exp(costs / iters),
