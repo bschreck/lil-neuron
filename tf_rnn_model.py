@@ -3,10 +3,12 @@ import numpy as np
 import time
 import random
 import copy
+import sys
 
 import tf_reader as reader
 from extract_features import RapFeatureExtractor
 from generate_lyric_files import format_rapper_name
+from supervisor import PartialSupervisor, PartialSessionManager
 
 import pdb
 
@@ -81,6 +83,11 @@ flags.DEFINE_bool("train_pron_embedding", False,
                   "whether to train pronunciation embeddings")
 flags.DEFINE_bool("train_context_embedding", False,
                   "whether to train context (i.e. rap vectors) embeddings")
+flags.DEFINE_bool("restore_from_checkpoint", False,
+                  "whether to force training to restore from a checkpoint")
+flags.DEFINE_integer("phase", 2,
+                  "")
+
 flags.DEFINE_integer("num_embed_shards", 8, "")
 
 flags.DEFINE_string("find_epoch_size", False, "")
@@ -176,7 +183,10 @@ class RNNPath(object):
         self.batch_size = config.batch_size
         self.rnn_size = config.hidden_size
         self.keep_prob = config.keep_prob
-        self.num_layers = config.num_layers
+        if FLAGS.phase == 1:
+            self.num_layers = config.num_layers
+        else:
+            self.num_layers = config.phase_2_num_layers
         self.embedding_dim = config.embedding_dim
         self.context_embedding_dim = config.context_embedding_dim
         self.vocab_size = config.vocab_size
@@ -242,6 +252,7 @@ class RNNPath(object):
                 self._pron_lookup_inits.append(shard_pron_lookup.assign(shard_pron_lookup_placeholder))
 
 
+
             pronunciation_embedding = tf.get_variable("pronunciation_embedding_W",
                     initializer=initializer(),
                     shape=[self.max_pron_length, self.embedding_dim],
@@ -263,7 +274,6 @@ class RNNPath(object):
                                               shape=[self.context_embedding_dim],
                                               trainable=train_context_embedding,
                                               dtype=data_type())
-
 
         with tf.device('/gpu:0'):
             embedding = tf.concat(0, embeddings)
@@ -359,8 +369,9 @@ class Learn(object):
         self.context_size = input.context_size
         self.vocab_size = config.vocab_size
 
-        with tf.device('/gpu:0'):
+        #with tf.device('/gpu:0'):
             #verse_len = tf.shape(self.rnn_path.outputs)[1]
+        with tf.device('/gpu:0'):
 
             final_unit_size = self.rnn_path.output_size + self.context_size
 	    print "final unit:", final_unit_size
@@ -481,6 +492,7 @@ class FullLNModel(object):
         self.config = config
         num_rappers = config.num_rappers
         rappers = []
+
         for r in xrange(num_rappers):
             rappers.append(input_["rapper" + str(r)])
         context = tf.concat(2, rappers)
@@ -584,6 +596,7 @@ class SmallConfig(Config):
     learning_rate = 1.0
     max_grad_norm = 5
     num_layers = 2
+    phase_2_num_layers = 3
     max_num_steps = 20
     hidden_size = 200
     embedding_dim = 300
@@ -601,7 +614,8 @@ class MediumConfig(Config):
     learning_rate = 1.0
     max_grad_norm = 5
     num_layers = 2
-    max_num_steps = 35
+    phase_2_num_layers = 3
+    max_num_steps = 30
     hidden_size = 650
     embedding_dim = 300
     context_embedding_dim = 30
@@ -609,7 +623,7 @@ class MediumConfig(Config):
     max_max_epoch = 39
     keep_prob = 0.5
     lr_decay = 0.8
-    batch_size = 20
+    batch_size = 10
 
 
 class LargeConfig(Config):
@@ -618,7 +632,8 @@ class LargeConfig(Config):
     learning_rate = 1.0
     max_grad_norm = 10
     num_layers = 2
-    max_num_steps = 35
+    phase_2_num_layers = 3
+    max_num_steps = 30
     hidden_size = 1500
     embedding_dim = 300
     context_embedding_dim = 50
@@ -626,7 +641,7 @@ class LargeConfig(Config):
     max_max_epoch = 55
     keep_prob = 0.35
     lr_decay = 1 / 1.15
-    batch_size = 20
+    batch_size = 15
 
 
 class TestConfig(Config):
@@ -635,6 +650,7 @@ class TestConfig(Config):
     learning_rate = 1.0
     max_grad_norm = 1
     num_layers = 2
+    phase_2_num_layers = 3
     max_num_steps = 2
     hidden_size = 2
     embedding_dim = 300
@@ -729,13 +745,14 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
         costs += cost
         iters += verse_length
 
-        every10 = model.input.epoch_size // 10
+        every10 = model.input.epoch_size // 100
         #print "wps: {}".format( iters * model.batch_size / (time.time() - start_time))
         print_output = (step == 0 or step % every10 == 0)
         if verbose and print_output:
             print("%.3f perplexity: %.3f speed: %.0f wps" %
                   (step * 1.0 / model.input.epoch_size, np.exp(costs / iters),
                    iters * model.batch_size / (time.time() - start_time)))
+            sys.stdout.flush()
 
     return np.exp(costs / iters)
 
@@ -762,6 +779,8 @@ def generate_text(extractor, gen_config, rappers, starter):
                                    inter_op_parallelism_threads=20)
         text = ""
         with sv.managed_session(config=tf_config) as session:
+            # new_saver = tf.train.import_meta_graph('my-model.meta')
+            # new_saver.restore(sess, tf.train.latest_checkpoint('./'))
             # Restore variables from disk.
             ckpt = tf.train.get_checkpoint_state(FLAGS.save_path)
             if ckpt and ckpt.model_checkpoint_path:
@@ -855,6 +874,16 @@ def main(argv):
     else:
         FLAGS.generate = False
 
+    FLAGS.train_pron_embedding = False
+    FLAGS.train_word_vectors = False
+    FLAGS.train_context_embedding = False
+    if FLAGS.phase > 1:
+        FLAGS.train_pron_embedding = True
+        FLAGS.train_word_vectors = True
+        FLAGS.train_context_embedding = True
+        FLAGS.restore_from_checkpoint = True
+
+
     # TODO: make sure all files are set to correct places
     # start with loading word vectors/prons from file set to False
     # and provide the filename of the glove vectors
@@ -926,11 +955,36 @@ def main(argv):
                 mtest = FullLNModel(is_training=False, config=eval_gen_config,
                                     input_=test_ln_input)
 
-        sv = tf.train.Supervisor(logdir=FLAGS.save_path)
+
+        init_all_op = tf.initialize_all_variables()
+        # saver = 0
+        # ckpt = tf.train.get_checkpoint_state(FLAGS.save_path)
+        # if ckpt and ckpt.model_checkpoint_path:
+            # saver = optimistic_saver(ckpt.model_checkpoint_path)
+        sv_base = tf.train.Supervisor(logdir=FLAGS.save_path, init_op=init_all_op)
+
+        manager = PartialSessionManager(
+              local_init_op=sv_base._local_init_op,
+              ready_op=sv_base._ready_op,
+              ready_for_local_init_op=sv_base._ready_for_local_init_op,
+              graph=sv_base._graph,
+              recovery_wait_secs=sv_base._recovery_wait_secs)
+
+        sv = PartialSupervisor(logdir=FLAGS.save_path, init_op=init_all_op,
+                               session_manager=manager)
         tf_config = tf.ConfigProto(allow_soft_placement=True,
                                    inter_op_parallelism_threads=20,
 				    log_device_placement=False)
         with sv.managed_session(config=tf_config) as session:
+            # if FLAGS.restore_from_checkpoint:
+                # # Restore variables from disk.
+                # ckpt = tf.train.get_checkpoint_state(FLAGS.save_path)
+                # if ckpt and ckpt.model_checkpoint_path:
+                    # optimistic_restore(session, ckpt.model_checkpoint_path)
+                    # #sv.saver.restore(session, ckpt.model_checkpoint_path)
+                    # print "Model restored from file " + ckpt.model_checkpoint_path
+                # else:
+                    # raise Exception("Model ckpt not found")
             for i in range(config.max_max_epoch):
                 lr_decay = config.lr_decay ** max(i + 1 - config.max_epoch, 0.0)
                 m.assign_lr(session, config.learning_rate * lr_decay)
@@ -941,6 +995,7 @@ def main(argv):
                 print("Epoch: %d Train Perplexity: %.3f" % (i + 1, train_perplexity))
                 valid_perplexity = run_epoch(session, mvalid, word_vectors, pronunciation_vectors)
                 print("Epoch: %d Valid Perplexity: %.3f" % (i + 1, valid_perplexity))
+                sys.stdout.flush()
 
             test_perplexity = run_epoch(session, mtest, word_vectors, pronunciation_vectors)
             print("Test Perplexity: %.3f" % test_perplexity)
@@ -949,6 +1004,24 @@ def main(argv):
                 print("Saving model to %s." % FLAGS.save_path)
                 sv.saver.save(session, FLAGS.save_path, global_step=sv.global_step)
 
+# def optimistic_saver(save_file):
+    # reader = tf.train.NewCheckpointReader(save_file)
+    # saved_shapes = reader.get_variable_to_shape_map()
+    # var_names = sorted([(var.name, var.name.split(':')[0], var.dtype) for var in tf.global_variables()
+            # if var.name.split(':')[0] in saved_shapes])
+    # restore_vars = []
+    # with tf.variable_scope('', reuse=True):
+        # for var_name, saved_var_name, dtype in var_names:
+            # try:
+                # curr_var = tf.get_variable(saved_var_name, dtype=dtype)
+            # except ValueError:
+                # print "Could not load {}".format(var_name)
+            # else:
+                # var_shape = curr_var.get_shape().as_list()
+                # if var_shape == saved_shapes[saved_var_name]:
+                    # restore_vars.append(curr_var)
+    # saver = tf.train.Saver(restore_vars)
+    # return saver
 
 if __name__ == "__main__":
     tf.app.run()
