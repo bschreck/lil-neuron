@@ -118,10 +118,8 @@ class LNInput(object):
         self.max_num_steps = config.max_num_steps
         self.filename = filename
         if FLAGS.find_epoch_size:
-            print self.batch_size, self.max_num_steps
             self._epoch_size = reader.num_batches(extractor, self.batch_size, self.max_num_steps, self.filename)
             batches = reader.run_and_return_batches(extractor, 1, self.batch_size, self.max_num_steps, self.filename)
-            pdb.set_trace()
         else:
             self._epoch_size = epoch_size
         print "epoch size:", self._epoch_size
@@ -811,7 +809,7 @@ def generate_text(extractor, gen_config, rappers, starter):
                 output_probs, state = session.run([m.output_probs, m.final_state],
                                                   feed_dict)
 
-		print output_probs
+                print output_probs
                 x = sample(output_probs[-1], 0.9)
 
                 word = get_word(x)
@@ -871,7 +869,7 @@ def main(argv):
             FLAGS.train_epoch_size = 25
             FLAGS.valid_epoch_size = 25
             FLAGS.test_epoch_size = 200
-            FLAGS.find_epoch_size = True
+            FLAGS.find_epoch_size = False
         FLAGS.save_path = "{}_models".format(FLAGS.model)
     if len(argv) > 2 and argv[2].startswith('g'):
         FLAGS.generate = True
@@ -967,6 +965,7 @@ def main(argv):
             # saver = optimistic_saver(ckpt.model_checkpoint_path)
         sv_base = tf.train.Supervisor(logdir=FLAGS.save_path, init_op=init_all_op)
 
+        # TODO: get this locally to work, but part of problem with generate is that i'm using a different saver
         manager = PartialSessionManager(
               local_init_op=sv_base._local_init_op,
               ready_op=sv_base._ready_op,
@@ -978,7 +977,7 @@ def main(argv):
                                session_manager=manager)
         tf_config = tf.ConfigProto(allow_soft_placement=True,
                                    inter_op_parallelism_threads=20,
-				    log_device_placement=False)
+                                   log_device_placement=False)
         with sv.managed_session(config=tf_config) as session:
             # if FLAGS.restore_from_checkpoint:
                 # # Restore variables from disk.
