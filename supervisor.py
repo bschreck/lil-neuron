@@ -132,7 +132,7 @@ class PartialSupervisor(tf.train.Supervisor):
         var_names = sorted([(var.name, var.name.split(':')[0], var.dtype) for var in all_vars
                 if var.name.split(':')[0] in saved_shapes])
         restore_vars = []
-        with tf.variable_scope('', reuse=True):
+        with tf.variable_scope(tf.get_variable_scope(), reuse=True):
             for var_name, saved_var_name, dtype in var_names:
                 try:
                     curr_var = tf.get_variable(saved_var_name, dtype=dtype)
