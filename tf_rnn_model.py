@@ -119,7 +119,7 @@ class LNInput(object):
         self.filename = filename
         if FLAGS.find_epoch_size:
             self._epoch_size = reader.num_batches(extractor, self.batch_size, self.max_num_steps, self.filename)
-            batches = reader.run_and_return_batches(extractor, 1, self.batch_size, self.max_num_steps, self.filename)
+            #batches = reader.run_and_return_batches(extractor, 1, self.batch_size, self.max_num_steps, self.filename)
         else:
             self._epoch_size = epoch_size
         print "epoch size:", self._epoch_size
@@ -760,8 +760,8 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
 
 def generate_text(extractor, gen_config, rappers, starter):
     with tf.Graph().as_default():
-        initializer = tf.random_uniform_initializer(-gen_config.init_scale,
-                                                    gen_config.init_scale)
+        init = initializer()
+
         with tf.name_scope("Train"):
             words = ["<eos>", "<eov>", "<eor>"]
             rappers = [format_rapper_name(r) for r in rappers]
@@ -773,12 +773,25 @@ def generate_text(extractor, gen_config, rappers, starter):
             gen_input = GeneratorInput(extractor=extractor, config=gen_config,
                                        input_data=tensor_dict,
                                        name="GeneratorInput")
-            with tf.variable_scope("Model", reuse=None, initializer=initializer):
+            with tf.variable_scope("Model", reuse=None, initializer=init):
                 m = FullLNModel(is_training=False, config=gen_config,
                                 input_=gen_input)
-        sv = tf.train.Supervisor(logdir=FLAGS.save_path)
+
+        init_all_op = tf.initialize_all_variables()
+        sv_base = tf.train.Supervisor(logdir=FLAGS.save_path, init_op=init_all_op)
+
+        manager = PartialSessionManager(
+              local_init_op=sv_base._local_init_op,
+              ready_op=sv_base._ready_op,
+              ready_for_local_init_op=sv_base._ready_for_local_init_op,
+              graph=sv_base._graph,
+              recovery_wait_secs=sv_base._recovery_wait_secs)
+
+        sv = PartialSupervisor(logdir=FLAGS.save_path, init_op=init_all_op,
+                               session_manager=manager)
         tf_config = tf.ConfigProto(allow_soft_placement=True,
-                                   inter_op_parallelism_threads=20)
+                                   inter_op_parallelism_threads=20,
+                                   log_device_placement=False)
         text = ""
         with sv.managed_session(config=tf_config) as session:
             # new_saver = tf.train.import_meta_graph('my-model.meta')
