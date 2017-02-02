@@ -90,7 +90,7 @@ flags.DEFINE_integer("phase", 2,
 
 flags.DEFINE_integer("num_embed_shards", 8, "")
 
-flags.DEFINE_string("find_epoch_size", False, "")
+flags.DEFINE_string("find_epoch_size", True, "")
 flags.DEFINE_integer("train_epoch_size", 50314, "")
 flags.DEFINE_integer("valid_epoch_size", 0, "")
 flags.DEFINE_integer("test_epoch_size", 0, "")
@@ -118,7 +118,10 @@ class LNInput(object):
         self.max_num_steps = config.max_num_steps
         self.filename = filename
         if FLAGS.find_epoch_size:
+            print self.batch_size, self.max_num_steps
             self._epoch_size = reader.num_batches(extractor, self.batch_size, self.max_num_steps, self.filename)
+            batches = reader.run_and_return_batches(extractor, 1, self.batch_size, self.max_num_steps, self.filename)
+            pdb.set_trace()
         else:
             self._epoch_size = epoch_size
         print "epoch size:", self._epoch_size
@@ -722,13 +725,14 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
         costs += cost
         iters += verse_length
 
-        every10 = model.input.epoch_size // 1000
+        every10 = max(model.input.epoch_size // 1000, 1)
         print_output = (step == 0 or step % every10 == 0)
         if verbose and print_output:
             print("%.3f perplexity: %.3f speed: %.0f wps" %
                   (step * 1.0 / model.input.epoch_size, np.exp(costs / iters),
                    iters * model.batch_size / (time.time() - start_time)))
             sys.stdout.flush()
+            print iters * model.batch_size
 
     return np.exp(costs / iters)
 
