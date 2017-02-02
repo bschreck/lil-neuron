@@ -1,4 +1,5 @@
 import tensorflow as tf
+import time
 from extract_features import RapFeatureExtractor
 import pdb
 
@@ -67,11 +68,17 @@ def run_one_epoch(inner_func, extractor, batch_size, max_num_steps, fname):
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(coord=coord)
             res = None
+            #start = time.time()
+            #i = 0
             try:
                 while not coord.should_stop():
                     # Retrieve a single instance:
                     b = sess.run(batched)
                     res, should_stop = inner_func(b, res)
+                    #batch_time = time.time() - start
+                    #print "ITER:", i
+                    #print "BATCH TIME:", batch_time
+		    #i += 1
                     if should_stop:
                         break
             except tf.errors.OutOfRangeError:

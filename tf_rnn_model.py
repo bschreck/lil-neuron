@@ -84,9 +84,9 @@ flags.DEFINE_bool("train_context_embedding", False,
 flags.DEFINE_integer("num_embed_shards", 8, "")
 
 flags.DEFINE_string("find_epoch_size", False, "")
-flags.DEFINE_integer("train_epoch_size", 50314, "")
-flags.DEFINE_integer("valid_epoch_size", 0, "")
-flags.DEFINE_integer("test_epoch_size", 0, "")
+flags.DEFINE_integer("train_epoch_size", 30328, "")
+flags.DEFINE_integer("valid_epoch_size", 30328, "")
+flags.DEFINE_integer("test_epoch_size", 1387630, "")
 
 FLAGS = flags.FLAGS
 
@@ -95,7 +95,7 @@ def data_type():
     return tf.float16 if FLAGS.use_fp16 else tf.float32
 
 def partitioner():
-    max_shard_bytes = (64 << 20) - 1
+    max_shard_bytes = (24 << 20) - 1
     return tf.variable_axis_size_partitioner(max_shard_bytes, axis=0, bytes_per_string_element=16, max_shards=None)
 
 def initializer():
@@ -183,7 +183,7 @@ class RNNPath(object):
         self.max_num_steps = config.max_num_steps
         self.max_pron_length = config.max_pron_length
 
-        with tf.device(device):
+        with tf.device('/cpu:0'):
             # Can experiment with different settings
             lstm_args = dict(use_peepholes=False,
                              cell_clip=None,
@@ -206,7 +206,7 @@ class RNNPath(object):
 
 
 
-        with tf.device(FLAGS.alternate_device):
+        with tf.device('/cpu:0'):
             shard_size = int(self.vocab_size / FLAGS.num_embed_shards)
             shard_sizes = [shard_size for _ in xrange(FLAGS.num_embed_shards)]
             shard_sizes[-1] = self.vocab_size - (shard_size * (FLAGS.num_embed_shards - 1))
@@ -225,7 +225,6 @@ class RNNPath(object):
                 self._embedding_placeholders.append(shard_embedding_placeholder)
 
                 self._embedding_inits.append(shard_embedding.assign(shard_embedding_placeholder))
-            embedding = tf.concat(0, embeddings)
 
             self._pron_lookup_placeholders = []
             self._pron_lookup_inits = []
@@ -241,7 +240,6 @@ class RNNPath(object):
                 self._pron_lookup_placeholders.append(shard_pron_lookup_placeholder)
 
                 self._pron_lookup_inits.append(shard_pron_lookup.assign(shard_pron_lookup_placeholder))
-            pron_lookup = tf.concat(0, pron_lookups)
 
 
             pronunciation_embedding = tf.get_variable("pronunciation_embedding_W",
@@ -267,6 +265,10 @@ class RNNPath(object):
                                               dtype=data_type())
 
 
+        with tf.device('/gpu:0'):
+            embedding = tf.concat(0, embeddings)
+            pron_lookup = tf.concat(0, pron_lookups)
+
             word_embed_inputs = tf.nn.embedding_lookup(embedding, words)
             pron_inputs = tf.nn.embedding_lookup(pron_lookup, words)
             flat_pron_inputs = tf.reshape(pron_inputs, [-1, self.max_pron_length])
@@ -287,6 +289,7 @@ class RNNPath(object):
             combined = tf.concat(2, [word_embed_inputs, pron_embed_inputs, context_embed_inputs])
 
             full_embedded_input_size = 2*self.embedding_dim + self.context_embedding_dim
+        with tf.device('/cpu:0'):
             resize_layer_w = tf.get_variable("rnn_resize_w",
                                            initializer=initializer(),
                                            shape=[full_embedded_input_size, self.rnn_size],
@@ -297,6 +300,7 @@ class RNNPath(object):
                                            shape=[self.rnn_size],
                                            trainable=True,
                                            dtype=data_type())
+        with tf.device('/gpu:0'):
             combined_flattened = tf.reshape(combined, [-1, full_embedded_input_size])
             rnn_input = tf.batch_matmul(combined_flattened, resize_layer_w) + resize_layer_b
             rnn_input = tf.reshape(rnn_input, [self.batch_size, -1, self.rnn_size])
@@ -305,7 +309,7 @@ class RNNPath(object):
             if is_training and self.keep_prob < 1:
                 rnn_input = tf.nn.dropout(rnn_input, self.keep_prob)
 
-        with tf.device(device):
+        with tf.device('/gpu:0'):
             outputs, last_states = tf.nn.dynamic_rnn(cell=cell,
                                                      dtype=data_type(),
                                                      #sequence_length=verse_lengths,
@@ -355,16 +359,19 @@ class Learn(object):
         self.context_size = input.context_size
         self.vocab_size = config.vocab_size
 
-        with tf.device(device):
+        with tf.device('/gpu:0'):
             #verse_len = tf.shape(self.rnn_path.outputs)[1]
 
             final_unit_size = self.rnn_path.output_size + self.context_size
+	    print "final unit:", final_unit_size
 
             concat = tf.concat(2, [self.rnn_path.outputs, tf.cast(self.context, data_type())])
             outputs_flat = tf.reshape(concat, [-1, final_unit_size])
 
+        with tf.device('/cpu:0'):
 
-            softmax_b = tf.get_variable("softmax_b", [self.vocab_size], dtype=data_type())
+            softmax_b = tf.get_variable("softmax_b", [self.vocab_size],
+					dtype=data_type())
 
             print "vocab size:", self.vocab_size
             softmax_W = tf.get_variable(
@@ -375,9 +382,12 @@ class Learn(object):
                 dtype=data_type())
 
 
+        with tf.device('/gpu:0'):
             # Calculate logits and probs
             # Reshape so we can calculate them all at once
-            logits_flat = tf.batch_matmul(outputs_flat, softmax_W) + softmax_b
+            print "OUTPUTS FLAT:", outputs_flat
+            logits_flat = tf.matmul(outputs_flat, softmax_W.as_tensor()) + softmax_b
+            self.logits_flat = logits_flat
 
             # Calculate the losses
             y_flat = tf.reshape(labels, [-1])
@@ -401,17 +411,33 @@ class Learn(object):
                 self._probs_flat = tf.nn.softmax(logits_flat)
                 return
 
+        with tf.device('/cpu:0'):
             self._lr = tf.Variable(0.0, trainable=False, dtype=data_type())
             tvars = tf.trainable_variables()
+        with tf.device('/gpu:1'):
+            aggmeth = tf.AggregationMethod.EXPERIMENTAL_TREE
+            #aggmeth = tf.AggregationMethod.ADD_N
+            tvars = tf.trainable_variables()
             aggmeth = tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N
-            grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars,
-                                                           aggregation_method=aggmeth),
-                                              config.max_grad_norm)
             optimizer = tf.train.AdamOptimizer(self._lr)
+            GATE_NONE = 0
+            GATE_OP = 1
+            GATE_GRAPH = 2
+
+            gate_grad = GATE_NONE # GATE_OP, GATE_GRAPH
+            grads_and_vars = optimizer.compute_gradients(cost, tvars, aggregation_method=aggmeth,
+                                              gate_gradients=gate_grad)
+
+            #clipped_grads, _ = tf.clip_by_global_norm([g for g,v in grads_and_vars],
+            #                                  config.max_grad_norm)
+            clipped_grads = [tf.clip_by_norm(g, config.max_grad_norm) for g,v in grads_and_vars]
+
+        with tf.device('/cpu:0'):
             self._train_op = optimizer.apply_gradients(
-                zip(grads, tvars),
+                zip(clipped_grads, tvars),
                 global_step=tf.contrib.framework.get_or_create_global_step())
 
+        with tf.device('/cpu:0'):
             self._new_lr = tf.placeholder(
                 data_type(), shape=[], name="new_learning_rate")
             self._lr_update = tf.assign(self._lr, self._new_lr)
@@ -503,11 +529,11 @@ class FullLNModel(object):
 
     @property
     def initial_state(self):
-        return self.learn.initial_state
+        return self.rnn_path.initial_state
 
     @property
     def final_state(self):
-        return self.learn.final_state
+        return self.rnn_path.final_state
 
     @property
     def lr(self):
@@ -561,7 +587,7 @@ class SmallConfig(Config):
     max_num_steps = 20
     hidden_size = 200
     embedding_dim = 300
-    context_embedding_dim = 50
+    context_embedding_dim = 20
     max_epoch = 4
     max_max_epoch = 13
     keep_prob = 1.0
@@ -578,7 +604,7 @@ class MediumConfig(Config):
     max_num_steps = 35
     hidden_size = 650
     embedding_dim = 300
-    context_embedding_dim = 300
+    context_embedding_dim = 30
     max_epoch = 6
     max_max_epoch = 39
     keep_prob = 0.5
@@ -595,7 +621,7 @@ class LargeConfig(Config):
     max_num_steps = 35
     hidden_size = 1500
     embedding_dim = 300
-    context_embedding_dim = 300
+    context_embedding_dim = 50
     max_epoch = 14
     max_max_epoch = 55
     keep_prob = 0.35
@@ -663,6 +689,8 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
 
     fetches = {
         "cost": model.cost,
+        #"logits": model.learn.logits_flat,
+        #"losses": model.learn.losses,
         "final_state": model.final_state,
         "context": model.context,
     }
@@ -702,7 +730,8 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
         iters += verse_length
 
         every10 = model.input.epoch_size // 10
-        print_output = (every10 == 0 or step % every10 == 10)
+        #print "wps: {}".format( iters * model.batch_size / (time.time() - start_time))
+        print_output = (step == 0 or step % every10 == 0)
         if verbose and print_output:
             print("%.3f perplexity: %.3f speed: %.0f wps" %
                   (step * 1.0 / model.input.epoch_size, np.exp(costs / iters),
@@ -759,6 +788,7 @@ def generate_text(extractor, gen_config, rappers, starter):
                 output_probs, state = session.run([m.output_probs, m.final_state],
                                                   feed_dict)
 
+		print output_probs
                 x = sample(output_probs[-1], 0.9)
 
                 word = get_word(x)
@@ -787,8 +817,10 @@ def generate_text(extractor, gen_config, rappers, starter):
 
 
 def sample(a, temperature=1.0):
+    temperature = 1.0
     # necessary because TF softmax sometimes
     # produces probabilities that sum to greater than 1
+    pdb.set_trace()
     a = np.log(a) / temperature
     a = np.exp(a) / np.sum(np.exp(a))
     r = random.random() # range: [0,1)
@@ -796,7 +828,9 @@ def sample(a, temperature=1.0):
     for i in range(len(a)):
         total += a[i]
         if total > r:
+            print "first return", i
             return i
+    print "second return"
     return len(a) - 1
 
 
@@ -855,8 +889,8 @@ def main(argv):
     eval_gen_config = config.to_eval_gen_config()
 
     if FLAGS.generate:
-        rappers = ["G-Eazy"]
-        starter = "I am"
+        rappers = ["MF Doom"]
+        starter = "Fuck everything"
         generate_text(extractor, eval_gen_config, rappers, starter)
         return
 
@@ -865,23 +899,23 @@ def main(argv):
         init = initializer()
 
         with tf.name_scope("Train"):
+            print "initializing training model:"
             train_ln_input = LNInput(extractor=extractor, config=config,
                                      filename=train_filename, name="TrainInput",
                                      epoch_size=FLAGS.train_epoch_size)
-            print "initializing training model:"
             with tf.variable_scope("Model", reuse=None, initializer=init):
                 m = FullLNModel(is_training=True, config=config, input_=train_ln_input)
-            tf.scalar_summary("Training Loss", m.cost)
-            tf.scalar_summary("Learning Rate", m.lr)
+            #tf.scalar_summary("Training Loss", m.cost)
+            #tf.scalar_summary("Learning Rate", m.lr)
         with tf.name_scope("Valid"):
             print "initializing valid model:"
             valid_ln_input = LNInput(extractor=extractor, config=config,
                                      filename=valid_filename, name="ValidInput",
                                      epoch_size=FLAGS.valid_epoch_size)
             with tf.variable_scope("Model", reuse=True, initializer=init):
-                mvalid = FullLNModel(is_training=False, config=config,
+                mvalid = FullLNModel(is_training=True, config=config,
                                      input_=valid_ln_input)
-            tf.scalar_summary("Validation Loss", mvalid.cost)
+            #tf.scalar_summary("Validation Loss", mvalid.cost)
         with tf.name_scope("Test"):
             print "initializing test model:"
             test_ln_input = LNInput(extractor=extractor, config=eval_gen_config,
@@ -894,7 +928,8 @@ def main(argv):
 
         sv = tf.train.Supervisor(logdir=FLAGS.save_path)
         tf_config = tf.ConfigProto(allow_soft_placement=True,
-                                   inter_op_parallelism_threads=20)
+                                   inter_op_parallelism_threads=20,
+				    log_device_placement=False)
         with sv.managed_session(config=tf_config) as session:
             for i in range(config.max_max_epoch):
                 lr_decay = config.lr_decay ** max(i + 1 - config.max_epoch, 0.0)
