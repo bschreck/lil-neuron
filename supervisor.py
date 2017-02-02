@@ -125,7 +125,11 @@ class PartialSupervisor(tf.train.Supervisor):
             return None
         reader = tf.train.NewCheckpointReader(save_path)
         saved_shapes = reader.get_variable_to_shape_map()
-        var_names = sorted([(var.name, var.name.split(':')[0], var.dtype) for var in tf.global_variables()
+        try:
+            all_vars = tf.global_variables()
+        except AttributeError:
+            all_vars = tf.all_variables()
+        var_names = sorted([(var.name, var.name.split(':')[0], var.dtype) for var in all_vars
                 if var.name.split(':')[0] in saved_shapes])
         restore_vars = []
         with tf.variable_scope('', reuse=True):
