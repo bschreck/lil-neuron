@@ -104,7 +104,11 @@ class PartialSupervisor(tf.train.Supervisor):
             restore_vars = self.get_restore_vars()
 
             saver = self._get_first_op_from_collection(tf.GraphKeys.SAVERS)
-            if saver is None and tf.global_variables():
+            try:
+                all_vars = tf.global_variables()
+            except AttributeError:
+                all_vars = tf.all_variables()
+            if saver is None and all_vars:
                 if restore_vars is not None:
                     saver = tf.train.Saver(restore_vars)
                 else:
