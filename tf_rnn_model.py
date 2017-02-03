@@ -796,7 +796,7 @@ def generate_text(extractor, gen_config, rappers, starter):
         with tf.Session(config=tf_config) as session:
             ckpt = tf.train.get_checkpoint_state(FLAGS.save_path)
             if ckpt and ckpt.model_checkpoint_path:
-                meta_graph_file = ".".join([tf.latest_checkpoint(FLAGS.save_path), "meta"])
+                meta_graph_file = ".".join([tf.train.latest_checkpoint(FLAGS.save_path), "meta"])
                 new_saver = tf.train.import_meta_graph(meta_graph_file)
                 new_saver.restore(session, ckpt.model_checkpoint_path)
             else:
