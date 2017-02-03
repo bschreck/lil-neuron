@@ -777,30 +777,30 @@ def generate_text(extractor, gen_config, rappers, starter):
                                 input_=gen_input)
 
         init_all_op = tf.initialize_all_variables()
-        # sv_base = tf.train.Supervisor(logdir=FLAGS.save_path, init_op=init_all_op)
+        sv_base = tf.train.Supervisor(logdir=FLAGS.save_path, init_op=init_all_op)
 
-        # manager = PartialSessionManager(
-              # local_init_op=sv_base._local_init_op,
-              # ready_op=sv_base._ready_op,
-              # ready_for_local_init_op=sv_base._ready_for_local_init_op,
-              # graph=sv_base._graph,
-              # recovery_wait_secs=sv_base._recovery_wait_secs)
+        manager = PartialSessionManager(
+              local_init_op=sv_base._local_init_op,
+              ready_op=sv_base._ready_op,
+              ready_for_local_init_op=sv_base._ready_for_local_init_op,
+              graph=sv_base._graph,
+              recovery_wait_secs=sv_base._recovery_wait_secs)
 
-        # sv = PartialSupervisor(logdir=FLAGS.save_path, init_op=init_all_op,
-                               # session_manager=manager)
+        sv = PartialSupervisor(logdir=FLAGS.save_path, init_op=init_all_op,
+                               session_manager=manager)
         tf_config = tf.ConfigProto(allow_soft_placement=True,
                                    inter_op_parallelism_threads=20,
                                    log_device_placement=False)
         text = ""
-        #with sv.managed_session(config=tf_config) as session:
-        with tf.Session(config=tf_config) as session:
-            ckpt = tf.train.get_checkpoint_state(FLAGS.save_path)
-            if ckpt and ckpt.model_checkpoint_path:
-                meta_graph_file = ".".join([tf.train.latest_checkpoint(FLAGS.save_path), "meta"])
-                new_saver = tf.train.import_meta_graph(meta_graph_file)
-                new_saver.restore(session, ckpt.model_checkpoint_path)
-            else:
-                raise Exception("Model ckpt not found")
+        with sv.managed_session(config=tf_config) as session:
+        # with tf.Session(config=tf_config) as session:
+            # ckpt = tf.train.get_checkpoint_state(FLAGS.save_path)
+            # if ckpt and ckpt.model_checkpoint_path:
+                # meta_graph_file = ".".join([tf.train.latest_checkpoint(FLAGS.save_path), "meta"])
+                # new_saver = tf.train.import_meta_graph(meta_graph_file)
+                # new_saver.restore(session, ckpt.model_checkpoint_path)
+            # else:
+                # raise Exception("Model ckpt not found")
             # # new_saver = tf.train.import_meta_graph('my-model.meta')
             # # new_saver.restore(sess, tf.train.latest_checkpoint('./'))
             # # Restore variables from disk.
