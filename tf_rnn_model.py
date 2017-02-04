@@ -9,6 +9,7 @@ import tf_reader as reader
 from extract_features import RapFeatureExtractor
 from generate_lyric_files import format_rapper_name
 from supervisor import PartialSupervisor, PartialSessionManager
+import os
 
 import pdb
 
@@ -50,20 +51,20 @@ logging = tf.logging
 flags.DEFINE_string(
     "model", "test",
     "A type of model. Possible options are: test, small, medium, large.")
-flags.DEFINE_string("train_filename", 'data/tf_train_data_full.txt',
+flags.DEFINE_string("train_filename", 'data/snoop_tf_train_data.txt',
                     "where the training data is stored.")
-flags.DEFINE_string("valid_filename", 'data/tf_valid_data_full.txt',
+flags.DEFINE_string("valid_filename", 'data/snoop_tf_valid_data.txt',
                     "where the validation data is stored.")
-flags.DEFINE_string("test_filename", 'data/tf_test_data_full.txt',
+flags.DEFINE_string("test_filename", 'data/snoop_tf_test_data.txt',
                     "where the test data is stored.")
-flags.DEFINE_string("extractor_config_file", 'data/config_full.p',
+flags.DEFINE_string("extractor_config_file", 'data/snoop_config.p',
                     "Config info for RapFeatureExtractor")
 flags.DEFINE_string("word_vector_file", 'data/word_vectors/glove_retro.txt',
                     "Config info for RapFeatureExtractor")
 
-flags.DEFINE_string("processed_word_vector_file", 'data/processed_word_vector_array.p',
+flags.DEFINE_string("processed_word_vector_file", 'data/snoop_processed_word_vector_array.p',
                     "")
-flags.DEFINE_string("processed_pron_vector_file", 'data/processed_pron_vector_array.p',
+flags.DEFINE_string("processed_pron_vector_file", 'data/snoop_processed_pron_vector_array.p',
                     "")
 flags.DEFINE_string("save_path", 'models',
                     "Model output directory.")
@@ -83,13 +84,11 @@ flags.DEFINE_bool("train_pron_embedding", False,
                   "whether to train pronunciation embeddings")
 flags.DEFINE_bool("train_context_embedding", False,
                   "whether to train context (i.e. rap vectors) embeddings")
-flags.DEFINE_bool("restore_from_checkpoint", False,
-                  "whether to force training to restore from a checkpoint")
-flags.DEFINE_integer("phase", 2, "")
+flags.DEFINE_integer("phase", 1, "")
 
 flags.DEFINE_integer("num_embed_shards", 8, "")
 
-flags.DEFINE_string("find_epoch_size", False, "")
+flags.DEFINE_string("find_epoch_size", True, "")
 flags.DEFINE_integer("train_epoch_size", 30328, "")
 flags.DEFINE_integer("valid_epoch_size", 30328, "")
 flags.DEFINE_integer("test_epoch_size", 1387630, "")
@@ -102,7 +101,8 @@ def data_type():
 
 def partitioner():
     max_shard_bytes = (24 << 20) - 1
-    return tf.variable_axis_size_partitioner(max_shard_bytes, axis=0, bytes_per_string_element=16, max_shards=None)
+    #return tf.variable_axis_size_partitioner(max_shard_bytes, axis=0, bytes_per_string_element=16, max_shards=None)
+    return tf.fixed_size_partitioner(8, axis=0)
 
 def initializer():
     return tf.contrib.layers.variance_scaling_initializer(dtype=data_type())
@@ -118,7 +118,6 @@ class LNInput(object):
         self.filename = filename
         if FLAGS.find_epoch_size:
             self._epoch_size = reader.num_batches(extractor, self.batch_size, self.max_num_steps, self.filename)
-            #batches = reader.run_and_return_batches(extractor, 1, self.batch_size, self.max_num_steps, self.filename)
         else:
             self._epoch_size = epoch_size
         print "epoch size:", self._epoch_size
@@ -277,6 +276,7 @@ class RNNPath(object):
 
         with tf.device('/gpu:0'):
             embedding = tf.concat(0, embeddings)
+            print "EMBEDDING:", embedding
             pron_lookup = tf.concat(0, pron_lookups)
 
             word_embed_inputs = tf.nn.embedding_lookup(embedding, words)
@@ -374,7 +374,7 @@ class Learn(object):
         with tf.device('/gpu:0'):
 
             final_unit_size = self.rnn_path.output_size + self.context_size
-	    print "final unit:", final_unit_size
+            print "final unit:", final_unit_size
 
             concat = tf.concat(2, [self.rnn_path.outputs, tf.cast(self.context, data_type())])
             outputs_flat = tf.reshape(concat, [-1, final_unit_size])
@@ -382,7 +382,7 @@ class Learn(object):
         with tf.device('/cpu:0'):
 
             softmax_b = tf.get_variable("softmax_b", [self.vocab_size],
-					dtype=data_type())
+                                        dtype=data_type())
 
             print "vocab size:", self.vocab_size
             softmax_W = tf.get_variable(
@@ -397,7 +397,8 @@ class Learn(object):
             # Calculate logits and probs
             # Reshape so we can calculate them all at once
             print "OUTPUTS FLAT:", outputs_flat
-            logits_flat = tf.matmul(outputs_flat, softmax_W.as_tensor()) + softmax_b
+            #logits_flat = tf.matmul(outputs_flat, softmax_W.as_tensor()) + softmax_b
+            logits_flat = tf.matmul(outputs_flat, softmax_W) + softmax_b
             self.logits_flat = logits_flat
 
             # Calculate the losses
@@ -423,24 +424,27 @@ class Learn(object):
                 return
 
         with tf.device('/cpu:0'):
-            self._lr = tf.Variable(0.0, trainable=False, dtype=data_type())
-            tvars = tf.trainable_variables()
+            self._lr = tf.get_variable(
+                    "lr",
+                    trainable=False,
+                    initializer=tf.constant(0.0),
+                    dtype=data_type())
         with tf.device('/gpu:1'):
             aggmeth = tf.AggregationMethod.EXPERIMENTAL_TREE
             #aggmeth = tf.AggregationMethod.ADD_N
             tvars = tf.trainable_variables()
             aggmeth = tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N
-            optimizer = tf.train.AdamOptimizer(self._lr)
+            #optimizer = tf.train.AdamOptimizer(self._lr)
+            #optimizer = tf.train.RMSPropOptimizer(self._lr)
+            optimizer = tf.train.GradientDescentOptimizer(self._lr)
             GATE_NONE = 0
             GATE_OP = 1
             GATE_GRAPH = 2
 
-            gate_grad = GATE_NONE # GATE_OP, GATE_GRAPH
+            gate_grad = GATE_NONE#GATE_OP# , GATE_GRAPH
             grads_and_vars = optimizer.compute_gradients(cost, tvars, aggregation_method=aggmeth,
                                               gate_gradients=gate_grad)
 
-            #clipped_grads, _ = tf.clip_by_global_norm([g for g,v in grads_and_vars],
-            #                                  config.max_grad_norm)
             clipped_grads = [tf.clip_by_norm(g, config.max_grad_norm) for g,v in grads_and_vars]
 
         with tf.device('/cpu:0'):
@@ -705,8 +709,6 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
 
     fetches = {
         "cost": model.cost,
-        #"logits": model.learn.logits_flat,
-        #"losses": model.learn.losses,
         "final_state": model.final_state,
         "context": model.context,
     }
@@ -758,108 +760,71 @@ def run_epoch(session, model, word_vectors=None, pronunciation_vectors=None, eva
     return np.exp(costs / iters)
 
 def generate_text(extractor, gen_config, rappers, starter):
-    with tf.Graph().as_default():
-        init = initializer()
+    init = initializer()
 
-        with tf.name_scope("Train"):
-            words = ["<eos>", "<eov>", "<eor>"]
-            rappers = [format_rapper_name(r) for r in rappers]
-            words.append("<nrp:{}>".format(';'.join(rappers)))
-            starter = starter.replace(". ", " <eos> ").replace('\n', ' ').split()
-            words.extend(starter)
-            tensor_dict, input_data, init_op_local = extractor.gen_features_from_starter(rappers, words)
+    with tf.name_scope("Train"):
+        words = ["<eos>", "<eov>", "<eor>"]
+        rappers = [format_rapper_name(r) for r in rappers]
+        words.extend(rappers)
+        starter = starter.replace(". ", " <eos> ").replace('\n', ' ').split()
+        words.extend(starter)
+        tensor_dict, input_data, init_op_local = extractor.gen_features_from_starter(rappers, words)
 
-            gen_input = GeneratorInput(extractor=extractor, config=gen_config,
-                                       input_data=tensor_dict,
-                                       name="GeneratorInput")
-            with tf.variable_scope("Model", reuse=None, initializer=init):
-                m = FullLNModel(is_training=False, config=gen_config,
-                                input_=gen_input)
+        gen_input = GeneratorInput(extractor=extractor, config=gen_config,
+                                   input_data=tensor_dict,
+                                   name="GeneratorInput")
+        with tf.variable_scope("Model", reuse=None, initializer=init):
+            m = FullLNModel(is_training=False, config=gen_config,
+                            input_=gen_input)
 
-        init_all_op = tf.initialize_all_variables()
-        sv_base = tf.train.Supervisor(logdir=FLAGS.save_path, init_op=init_all_op)
+    init_all_op = tf.initialize_all_variables()
+    sv = tf.train.Supervisor(logdir=FLAGS.save_path, init_op=init_all_op)
+    tf_config = tf.ConfigProto(allow_soft_placement=True,
+                               inter_op_parallelism_threads=20,
+                               log_device_placement=False)
+    text = ""
+    with sv.managed_session(config=tf_config) as session:
+        state = session.run(m.initial_state)
 
-        manager = PartialSessionManager(
-              local_init_op=sv_base._local_init_op,
-              ready_op=sv_base._ready_op,
-              ready_for_local_init_op=sv_base._ready_for_local_init_op,
-              graph=sv_base._graph,
-              recovery_wait_secs=sv_base._recovery_wait_secs)
+        get_word = extractor.get_word_from_int
 
-        sv = PartialSupervisor(logdir=FLAGS.save_path, init_op=init_all_op,
-                               session_manager=manager)
-        tf_config = tf.ConfigProto(allow_soft_placement=True,
-                                   inter_op_parallelism_threads=20,
-                                   log_device_placement=False)
-        text = ""
-        with sv.managed_session(config=tf_config) as session:
-        # with tf.Session(config=tf_config) as session:
-            # ckpt = tf.train.get_checkpoint_state(FLAGS.save_path)
-            # if ckpt and ckpt.model_checkpoint_path:
-                # meta_graph_file = ".".join([tf.train.latest_checkpoint(FLAGS.save_path), "meta"])
-                # new_saver = tf.train.import_meta_graph(meta_graph_file)
-                # new_saver.restore(session, ckpt.model_checkpoint_path)
-            # else:
-                # raise Exception("Model ckpt not found")
-            # # new_saver = tf.train.import_meta_graph('my-model.meta')
-            # # new_saver.restore(sess, tf.train.latest_checkpoint('./'))
-            # # Restore variables from disk.
-                # sv.saver.restore(session, ckpt.model_checkpoint_path)
-                # print "Model restored from file " + FLAGS.save_path
+        end_of_rap = False
+        first_time = True
 
+        while not end_of_rap:
+            feed_dict = {}
+            for i, (c, h) in enumerate(m.initial_state):
+                feed_dict[c] = state[i].c
+                feed_dict[h] = state[i].h
 
-            # new_saver = tf.train.import_meta_graph('my-model.meta')
-            # new_saver.restore(sess, tf.train.latest_checkpoint('./'))
-            # Restore variables from disk.
-            # ckpt = tf.train.get_checkpoint_state(FLAGS.save_path)
-            # if ckpt and ckpt.model_checkpoint_path:
-                # sv.saver.restore(session, ckpt.model_checkpoint_path)
-                # print "Model restored from file " + FLAGS.save_path
-            # else:
-                # raise Exception("Model ckpt not found")
+            for k, t in tensor_dict.iteritems():
+                feed_dict[t] = input_data[k]
+            output_probs, state = session.run([m.output_probs, m.final_state],
+                                              feed_dict)
 
-            state = session.run(m.initial_state)
+            x = sample(output_probs[-1], 0.9)
 
-            get_word = extractor.get_word_from_int
-
-            end_of_rap = False
-            first_time = True
-
-            while not end_of_rap:
-                feed_dict = {}
-                for i, (c, h) in enumerate(m.initial_state):
-                    feed_dict[c] = state[i].c
-                    feed_dict[h] = state[i].h
-
-                for k, t in tensor_dict.iteritems():
-                    feed_dict[t] = input_data[k]
-                output_probs, state = session.run([m.output_probs, m.final_state],
-                                                  feed_dict)
-
-                print output_probs
-                x = sample(output_probs[-1], 0.9)
-
-                word = get_word(x)
-                if word == "<eos>":
-                    text += "\n"
-                elif word == "<eov>":
-                    text += "\n\n"
-                elif word == "<eor>":
-                    end_of_rap = True
-                else:
-                    text += " " + word
-                print word.encode('utf-8')
-                feats = extractor.update_features(x)
-                input_data.update(feats)
-                if first_time:
-                    # only include first context vector
-                    # since we now only have verses of length 1
-                    for k, v in input_data.iteritems():
-                        if k.startswith("rapper"):
-                            first_vec = v[:, 0, :]
-                            first_vec = first_vec[np.newaxis, :]
-                            input_data[k] = first_vec
-                first_time = False
+            word = get_word(x)
+            if word == "<eos>":
+                text += "\n"
+            elif word == "<eov>":
+                text += "\n\n"
+            elif word == "<eor>":
+                end_of_rap = True
+            else:
+                text += " " + word
+            print word.encode('utf-8')
+            feats = extractor.update_features(x)
+            input_data.update(feats)
+            if first_time:
+                # only include first context vector
+                # since we now only have verses of length 1
+                for k, v in input_data.iteritems():
+                    if k.startswith("rapper"):
+                        first_vec = v[:, 0, :]
+                        first_vec = first_vec[np.newaxis, :]
+                        input_data[k] = first_vec
+            first_time = False
     print text.encode('utf-8')
     return
 
@@ -868,7 +833,6 @@ def sample(a, temperature=1.0):
     temperature = 1.0
     # necessary because TF softmax sometimes
     # produces probabilities that sum to greater than 1
-    pdb.set_trace()
     a = np.log(a) / temperature
     a = np.exp(a) / np.sum(np.exp(a))
     r = random.random() # range: [0,1)
@@ -876,9 +840,7 @@ def sample(a, temperature=1.0):
     for i in range(len(a)):
         total += a[i]
         if total > r:
-            print "first return", i
             return i
-    print "second return"
     return len(a) - 1
 
 
@@ -910,7 +872,6 @@ def main(argv):
         FLAGS.train_pron_embedding = True
         FLAGS.train_word_vectors = True
         FLAGS.train_context_embedding = True
-        FLAGS.restore_from_checkpoint = True
 
 
     # TODO: make sure all files are set to correct places
@@ -925,35 +886,42 @@ def main(argv):
     #    then when generating rap lyrics, at each time point
     #    sample from the different semantic models (a semantic model is the word embedding)
     #    while always using the rap pronunciation embedding
-    print "initializing extractor"
-    extractor = RapFeatureExtractor(from_config=True,
-                                    config_file=FLAGS.extractor_config_file,
-                                    pronunciation_vectors_file=FLAGS.processed_pron_vector_file,
-                                    load_word_vectors_from_file=True,
-                                    word_vectors_file=FLAGS.processed_word_vector_file,
-                                    load_pronunciation_vectors_from_file=True)
-    print "loading embeddings"
-    pronunciation_vectors, max_pron_length = extractor.load_pronunciation_vectors()
-    word_vectors = extractor.load_glove_vectors()#FLAGS.word_vector_file)
-    print "initializing config"
-
-    vocab_size = extractor.vocab_length + 1
-    rap_vec_size = extractor.len_rapper_vector
-    num_rappers = extractor.max_nrps
-    train_filename = get_train_file()
-    valid_filename = get_valid_file()
-    test_filename = get_test_file()
-    config = get_config(vocab_size, rap_vec_size, num_rappers, max_pron_length)
-    eval_gen_config = config.to_eval_gen_config()
-
-    if FLAGS.generate:
-        rappers = ["MF Doom"]
-        starter = "Fuck everything"
-        generate_text(extractor, eval_gen_config, rappers, starter)
-        return
-
-    print "initializing session:"
     with tf.Graph().as_default():
+        print "initializing extractor"
+        load_word_vectors_from_file = False
+        if os.path.exists(FLAGS.processed_word_vector_file):
+            load_word_vectors_from_file = True
+        load_pronunciation_vectors_from_file = False
+        if os.path.exists(FLAGS.processed_pron_vector_file):
+            load_pronunciation_vectors_from_file = True
+
+        extractor = RapFeatureExtractor(from_config=True,
+                                        config_file=FLAGS.extractor_config_file,
+                                        pronunciation_vectors_file=FLAGS.processed_pron_vector_file,
+                                        load_word_vectors_from_file=load_word_vectors_from_file,
+                                        word_vectors_file=FLAGS.processed_word_vector_file,
+                                        load_pronunciation_vectors_from_file=load_pronunciation_vectors_from_file)
+        print "loading embeddings"
+        pronunciation_vectors, max_pron_length = extractor.load_pronunciation_vectors()
+        word_vectors = extractor.load_glove_vectors(FLAGS.word_vector_file)
+        print "initializing config"
+
+        vocab_size = extractor.vocab_length + 1
+        rap_vec_size = extractor.len_rapper_vector
+        num_rappers = extractor.max_nrps
+        train_filename = get_train_file()
+        valid_filename = get_valid_file()
+        test_filename = get_test_file()
+        config = get_config(vocab_size, rap_vec_size, num_rappers, max_pron_length)
+        eval_gen_config = config.to_eval_gen_config()
+
+        if FLAGS.generate:
+            rappers = ["MF Doom"]
+            starter = "I am"#Learn from machines"
+            generate_text(extractor, eval_gen_config, rappers, starter)
+            return
+
+        print "initializing session:"
         init = initializer()
 
         with tf.name_scope("Train"):
@@ -963,8 +931,8 @@ def main(argv):
                                      epoch_size=FLAGS.train_epoch_size)
             with tf.variable_scope("Model", reuse=None, initializer=init):
                 m = FullLNModel(is_training=True, config=config, input_=train_ln_input)
-            #tf.scalar_summary("Training Loss", m.cost)
-            #tf.scalar_summary("Learning Rate", m.lr)
+            tf.scalar_summary("Training Loss", m.cost)
+            tf.scalar_summary("Learning Rate", m.lr)
         with tf.name_scope("Valid"):
             print "initializing valid model:"
             valid_ln_input = LNInput(extractor=extractor, config=config,
@@ -973,7 +941,7 @@ def main(argv):
             with tf.variable_scope("Model", reuse=True, initializer=init):
                 mvalid = FullLNModel(is_training=True, config=config,
                                      input_=valid_ln_input)
-            #tf.scalar_summary("Validation Loss", mvalid.cost)
+            tf.scalar_summary("Validation Loss", mvalid.cost)
         with tf.name_scope("Test"):
             print "initializing test model:"
             test_ln_input = LNInput(extractor=extractor, config=eval_gen_config,
@@ -984,37 +952,13 @@ def main(argv):
                 mtest = FullLNModel(is_training=False, config=eval_gen_config,
                                     input_=test_ln_input)
 
-
         init_all_op = tf.initialize_all_variables()
-        # saver = 0
-        # ckpt = tf.train.get_checkpoint_state(FLAGS.save_path)
-        # if ckpt and ckpt.model_checkpoint_path:
-            # saver = optimistic_saver(ckpt.model_checkpoint_path)
-        sv_base = tf.train.Supervisor(logdir=FLAGS.save_path, init_op=init_all_op)
+        sv = tf.train.Supervisor(logdir=FLAGS.save_path, init_op=init_all_op)
 
-        # TODO: get this locally to work, but part of problem with generate is that i'm using a different saver
-        manager = PartialSessionManager(
-              local_init_op=sv_base._local_init_op,
-              ready_op=sv_base._ready_op,
-              ready_for_local_init_op=sv_base._ready_for_local_init_op,
-              graph=sv_base._graph,
-              recovery_wait_secs=sv_base._recovery_wait_secs)
-
-        sv = PartialSupervisor(logdir=FLAGS.save_path, init_op=init_all_op,
-                               session_manager=manager)
         tf_config = tf.ConfigProto(allow_soft_placement=True,
                                    inter_op_parallelism_threads=20,
                                    log_device_placement=False)
         with sv.managed_session(config=tf_config) as session:
-            # if FLAGS.restore_from_checkpoint:
-                # # Restore variables from disk.
-                # ckpt = tf.train.get_checkpoint_state(FLAGS.save_path)
-                # if ckpt and ckpt.model_checkpoint_path:
-                    # optimistic_restore(session, ckpt.model_checkpoint_path)
-                    # #sv.saver.restore(session, ckpt.model_checkpoint_path)
-                    # print "Model restored from file " + ckpt.model_checkpoint_path
-                # else:
-                    # raise Exception("Model ckpt not found")
             for i in range(config.max_max_epoch):
                 lr_decay = config.lr_decay ** max(i + 1 - config.max_epoch, 0.0)
                 m.assign_lr(session, config.learning_rate * lr_decay)
@@ -1034,24 +978,6 @@ def main(argv):
                 print("Saving model to %s." % FLAGS.save_path)
                 sv.saver.save(session, FLAGS.save_path, global_step=sv.global_step)
 
-# def optimistic_saver(save_file):
-    # reader = tf.train.NewCheckpointReader(save_file)
-    # saved_shapes = reader.get_variable_to_shape_map()
-    # var_names = sorted([(var.name, var.name.split(':')[0], var.dtype) for var in tf.global_variables()
-            # if var.name.split(':')[0] in saved_shapes])
-    # restore_vars = []
-    # with tf.variable_scope('', reuse=True):
-        # for var_name, saved_var_name, dtype in var_names:
-            # try:
-                # curr_var = tf.get_variable(saved_var_name, dtype=dtype)
-            # except ValueError:
-                # print "Could not load {}".format(var_name)
-            # else:
-                # var_shape = curr_var.get_shape().as_list()
-                # if var_shape == saved_shapes[saved_var_name]:
-                    # restore_vars.append(curr_var)
-    # saver = tf.train.Saver(restore_vars)
-    # return saver
 
 if __name__ == "__main__":
     tf.app.run()

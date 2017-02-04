@@ -256,22 +256,24 @@ def train_test_split(dirname, train_ratio=.9, valid_ratio=.05):
     return train_filenames, valid_filenames, test_filenames
 
 
-def process_corpora(output_dict_filename='data/word_dicts.p'):
+def process_corpora(data_location="data/lyric_files", output_dict_filename='data/word_dicts.p',
+                    corpus_filename="data/{}_corpus.txt", tokenized_filename="data/{}_corpus_tokenized.txt",
+                    word_count_file='data/pronouncing/word_count.p'):
     # Make sure 's and other similar tokens get pronunciations
 
     # TODO: add in good rappers more than once
-    train, valid, test = train_test_split("data/lyric_files")
+    train, valid, test = train_test_split(data_location)
     corpus_filenames = []
     tokenized_filenames = []
     for ctype, filenames in zip(['valid', 'test', 'train'], [valid, test, train]):
-        corpus_file = "data/{}_corpus.txt".format(ctype)
+        corpus_file = corpus_filename.format(ctype)
         corpus_filenames.append(corpus_file)
         make_single_corpus_file(filenames, corpus_file)
-        tokenized_file = "data/{}_corpus_tokenized.txt".format(ctype)
+        tokenized_file = tokenized_filename.format(ctype)
         tokenized_filenames.append(tokenized_file)
         tokenize_and_save_corpus(corpus_file, tokenized_file)
 
-    pronouncing_word_count_filename = 'data/pronouncing/word_count.p'
+    pronouncing_word_count_filename = word_count_file
 
     existing_slang_words = set(get_existing_slang_words().keys())
     create_correct_pronouncing_corpus(tokenized_filenames, pronouncing_word_count_filename,

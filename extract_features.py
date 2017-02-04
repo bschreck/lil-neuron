@@ -415,17 +415,34 @@ class RapFeatureExtractor(object):
             casted[key] = ct
         return casted
 
-
-if __name__ == '__main__':
-    train_corpus = 'data/train_corpus_tokenized.txt'
-    valid_corpus = 'data/valid_corpus_tokenized.txt'
-    test_corpus = 'data/test_corpus_tokenized.txt'
+def extract_features_from_corpus(corpus_name="data/{}_corpus_tokenized.txt",
+                                 spellcheck_dicts="data/word_dicts.p",
+                                 config_file="data/config_full.p",
+                                 output_filename="data/tf_{}_data_full.txt"):
+    train_corpus = corpus_name.format("train")
+    valid_corpus = corpus_name.format("valid")
+    test_corpus = corpus_name.format("test")
     extractor = RapFeatureExtractor(train_corpus=train_corpus,
                                     valid_corpus=valid_corpus,
                                     test_corpus=test_corpus,
                                     from_config=False,
-                                    spellcheck_dicts='data/word_dicts.p',
-                                    config_file='data/config_full.p')
-    extractor.save_tf_record_files(train_file="data/tf_train_data_full.txt",
-                                   valid_file="data/tf_valid_data_full.txt",
-                                   test_file="data/tf_test_data_full.txt")
+                                    spellcheck_dicts=spellcheck_dicts,
+                                    config_file=config_file)
+    extractor.save_tf_record_files(train_file=output_filename.format("train"),
+                                   valid_file=output_filename.format("valid"),
+                                   test_file=output_filename.format("test"))
+
+if __name__ == '__main__':
+    extract_features_from_corpus()
+    # train_corpus = 'data/train_corpus_tokenized.txt'
+    # valid_corpus = 'data/valid_corpus_tokenized.txt'
+    # test_corpus = 'data/test_corpus_tokenized.txt'
+    # extractor = RapFeatureExtractor(train_corpus=train_corpus,
+                                    # valid_corpus=valid_corpus,
+                                    # test_corpus=test_corpus,
+                                    # from_config=False,
+                                    # spellcheck_dicts='data/word_dicts.p',
+                                    # config_file='data/config_full.p')
+    # extractor.save_tf_record_files(train_file="data/tf_train_data_full.txt",
+                                   # valid_file="data/tf_valid_data_full.txt",
+                                   # test_file="data/tf_test_data_full.txt")

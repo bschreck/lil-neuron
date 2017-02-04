@@ -5,6 +5,7 @@ import multiprocessing as mp
 import pdb
 import string
 import pronouncing
+import cPickle as pck
 all_phones = set(["AA", "AE", "AH", "AO", "AW", "AY", "B", "CH", "D", "DH",
                   "EH", "ER", "EY", "F", "G", "HH", "IH", "IY", "JH", "K",
                   "L", "M", "N", "NG", "OW", "OY", "P", "R", "S", "SH",
@@ -49,15 +50,25 @@ def no_punc(w):
             # return False
     # return True
 
-def find_pronunciations():
+def find_pronunciations(from_word_dict_file=None):
     from pymongo import MongoClient
     client = MongoClient()
     db = client['lil-neuron-db']
-    records = db.slang_words.find({"pronunciation": {'$exists': False}})
 
-    SLANG_WORD_COUNTS = sorted([(r["word"], r["count"]) for r in records
-                                 if r["count"] > 60 and no_punc(r['word'])],
-                               key=lambda x: -x[1])
+    if from_word_dict_file:
+        with open('data/snoop_word_dicts.p', 'rb') as f:
+               dicts = pck.load(f)
+               sw = dicts['slang_word_counts']
+        SLANG_WORD_COUNTS = sorted([(k,v) for k,v in sw.iteritems() if v > 20 and no_punc(k)], key=lambda x: -x[1])
+        records = db.slang_words.find({"pronunciation": {'$exists': False}})
+        not_existing = set([r['word'] for r in records])
+        SLANG_WORD_COUNTS = [(k,v) for k,v in SLANG_WORD_COUNTS if k in not_existing]
+    else:
+        records = db.slang_words.find({"pronunciation": {'$exists': False}})
+
+        SLANG_WORD_COUNTS = sorted([(r["word"], r["count"]) for r in records
+                                     if r["count"] > 60 and no_punc(r['word'])],
+                                   key=lambda x: -x[1])
 
     print "SLANG WORDS LEFT:", len(SLANG_WORD_COUNTS)
 
