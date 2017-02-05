@@ -88,10 +88,13 @@ flags.DEFINE_integer("phase", 1, "")
 
 flags.DEFINE_integer("num_embed_shards", 8, "")
 
+# Full epoch sizes
+# 30328
+# 1387630
 flags.DEFINE_string("find_epoch_size", True, "")
 flags.DEFINE_integer("train_epoch_size", 30328, "")
-flags.DEFINE_integer("valid_epoch_size", 30328, "")
-flags.DEFINE_integer("test_epoch_size", 1387630, "")
+flags.DEFINE_integer("valid_epoch_size", 978, "")
+flags.DEFINE_integer("test_epoch_size", 13390, "")
 
 FLAGS = flags.FLAGS
 
@@ -862,6 +865,7 @@ def main(argv):
         FLAGS.save_path = "{}_models".format(FLAGS.model)
     if len(argv) > 2 and argv[2].startswith('g'):
         FLAGS.generate = True
+        FLAGS.find_epoch_size = False
     else:
         FLAGS.generate = False
 
@@ -916,8 +920,8 @@ def main(argv):
         eval_gen_config = config.to_eval_gen_config()
 
         if FLAGS.generate:
-            rappers = ["MF Doom"]
-            starter = "I am"#Learn from machines"
+            rappers = ["Snoop Dogg"]
+            starter = "Learn from banks"
             generate_text(extractor, eval_gen_config, rappers, starter)
             return
 
