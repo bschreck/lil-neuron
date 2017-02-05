@@ -91,7 +91,7 @@ flags.DEFINE_integer("num_embed_shards", 8, "")
 # Full epoch sizes
 # 30328
 # 1387630
-flags.DEFINE_string("find_epoch_size", True, "")
+flags.DEFINE_string("find_epoch_size", False, "")
 flags.DEFINE_integer("train_epoch_size", 30328, "")
 flags.DEFINE_integer("valid_epoch_size", 978, "")
 flags.DEFINE_integer("test_epoch_size", 13390, "")
