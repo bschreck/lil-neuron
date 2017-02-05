@@ -956,8 +956,8 @@ def main(argv):
                 mtest = FullLNModel(is_training=False, config=eval_gen_config,
                                     input_=test_ln_input)
 
-        init_all_op = tf.initialize_all_variables()
-        sv = tf.train.Supervisor(logdir=FLAGS.save_path, init_op=init_all_op)
+        #init_all_op = tf.initialize_all_variables()
+        sv = tf.train.Supervisor(logdir=FLAGS.save_path)#, init_op=init_all_op)
 
         tf_config = tf.ConfigProto(allow_soft_placement=True,
                                    inter_op_parallelism_threads=20,
