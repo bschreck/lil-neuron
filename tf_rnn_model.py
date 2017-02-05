@@ -84,7 +84,7 @@ flags.DEFINE_bool("train_pron_embedding", False,
                   "whether to train pronunciation embeddings")
 flags.DEFINE_bool("train_context_embedding", False,
                   "whether to train context (i.e. rap vectors) embeddings")
-flags.DEFINE_integer("phase", 1, "")
+flags.DEFINE_integer("phase", 2, "")
 
 flags.DEFINE_integer("num_embed_shards", 8, "")
 
@@ -432,7 +432,7 @@ class Learn(object):
                     trainable=False,
                     initializer=tf.constant(0.0),
                     dtype=data_type())
-        with tf.device('/gpu:1'):
+        with tf.device('/gpu:0'):
             aggmeth = tf.AggregationMethod.EXPERIMENTAL_TREE
             #aggmeth = tf.AggregationMethod.ADD_N
             tvars = tf.trainable_variables()
@@ -450,7 +450,7 @@ class Learn(object):
 
             clipped_grads = [tf.clip_by_norm(g, config.max_grad_norm) for g,v in grads_and_vars]
 
-        with tf.device('/cpu:0'):
+        with tf.device('/gpu:0'):
             self._train_op = optimizer.apply_gradients(
                 zip(clipped_grads, tvars),
                 global_step=tf.contrib.framework.get_or_create_global_step())
@@ -621,7 +621,7 @@ class MediumConfig(Config):
     learning_rate = 1.0
     max_grad_norm = 5
     num_layers = 2
-    phase_2_num_layers = 3
+    phase_2_num_layers = 2
     max_num_steps = 30
     hidden_size = 650
     embedding_dim = 300
@@ -630,7 +630,7 @@ class MediumConfig(Config):
     max_max_epoch = 39
     keep_prob = 0.5
     lr_decay = 0.8
-    batch_size = 10
+    batch_size = 20
 
 
 class LargeConfig(Config):
@@ -639,7 +639,7 @@ class LargeConfig(Config):
     learning_rate = 1.0
     max_grad_norm = 10
     num_layers = 2
-    phase_2_num_layers = 3
+    phase_2_num_layers = 2
     max_num_steps = 30
     hidden_size = 1500
     embedding_dim = 300
