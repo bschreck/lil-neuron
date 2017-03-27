@@ -9,6 +9,7 @@ try:
 except:
     pass
 
+import random
 import time
 import string
 import os
@@ -106,12 +107,26 @@ def all_filenames_by_artist(dirname):
     return filenames
 
 
+def find_rapper_ratings():
+    client = MongoClient()
+    db = client['lil-neuron-db']
+    records = db.artists.find({'rating': {'$exists': True}}, {'rating': True, 'name': True})
+    ratings = defaultdict(int)
+    for r in records:
+        ratings[r['name']] = r['rating']
+    return ratings
+
+
 def make_single_corpus_file(filenames, output_filename):
     def format_rapper(match):
         rapper = match.group(2).lower().replace(' ', '_')
         return '<nrp:{}>'.format(rapper)
-    with open(output_filename, 'wb') as out:
-        for f in filenames:
+    rapper_ratings = find_rapper_ratings()
+    filename_lines = {}
+    for artist, fs in filenames.iteritems():
+        filename_lines[artist] = {}
+        for f in fs:
+            filename_lines[artist][f] = []
             with open(f, 'r') as fo:
                 lines = fo.readlines()
                 for line in lines:
@@ -123,8 +138,26 @@ def make_single_corpus_file(filenames, output_filename):
                         line = '<nrp:{}>\n<eos>\n'.format(';'.join(rappers))
                     else:
                         line += '\n<eos>\n'
-                    out.write(line)
-                out.write('\n<eor>\n')
+                    filename_lines[artist][f].append(line)
+                filename_lines[artist][f].append('\n<eor>\n')
+    filenames_ex = expand_filenames_on_ratings(filenames, rapper_ratings)
+    with open(output_filename, 'wb') as out:
+        for artist, f in filenames_ex:
+            for line in filename_lines[artist][f]:
+                out.write(line)
+
+
+def expand_filenames_on_ratings(filenames, ratings, multipliers=[1, 10, 50]):
+    expanded_filenames = []
+    for artist in filenames:
+        multiplier = multipliers[0]
+        if artist in ratings:
+            multiplier = multipliers[ratings[artist] - 1]
+        for f in filenames[artist]:
+            expanded_filenames.extend([(artist, f)] * multiplier)
+    random.shuffle(expanded_filenames)
+    return expanded_filenames
+
 
 def format_rapper_name(rapper):
     return rapper.replace(' ', '_').lower()
@@ -174,8 +207,17 @@ def tokenize_and_save_corpus(corpus_filename, new_filename):
         new = unicode(w).translate(replace_punctuation)
         if len(new):
             new_words.append(new)
+
+    new_words = replace_uncommon(new_words, thresh=20)
+
     with open(new_filename, 'w') as f:
         f.write(' '.join(new_words).encode('utf-8'))
+
+
+def replace_uncommon(new_words, thresh=20):
+    c = Counter(new_words)
+    uncommon = set([w for w, cnt in c.items() if cnt <= thresh])
+    return [w if w not in uncommon else '<unk>' for w in new_words]
 
 
 def create_correct_pronouncing_corpus(tokenized_corpus_filenames, new_filename,
@@ -240,19 +282,19 @@ def train_test_split(dirname, train_ratio=.9, valid_ratio=.05):
                                      replace=False,
                                      size=int(len(filenames) * train_ratio))
 
-    train_filenames = [v for i, kv in enumerate(filenames.iteritems())
-                       for v in kv[1] if i in train_indices]
+    train_filenames = {kv[0]: kv[1] for i, kv in enumerate(filenames.iteritems())
+                       if i in train_indices}
 
-    valid_test_filenames = [kv[1] for i, kv in enumerate(filenames.iteritems()) if i not in train_indices]
+    valid_test_filenames = {kv[0]: kv[1] for i, kv in enumerate(filenames.iteritems()) if i not in train_indices}
 
     new_valid_ratio = valid_ratio / (1 - train_ratio)
     valid_indices = np.random.choice(np.arange(len(valid_test_filenames)),
                                      replace=False,
                                      size=int(len(valid_test_filenames) * new_valid_ratio))
-    valid_filenames = [f for i, v in enumerate(valid_test_filenames)
-                       for f in v if i in valid_indices]
-    test_filenames = [f for i, v in enumerate(valid_test_filenames)
-                      for f in v if i not in valid_indices]
+    valid_filenames = {kv[0]: kv[1] for i, kv in enumerate(valid_test_filenames.iteritems())
+                       if i in valid_indices}
+    test_filenames = {kv[0]: kv[1] for i, kv in enumerate(valid_test_filenames.iteritems())
+                      if i not in valid_indices}
     return train_filenames, valid_filenames, test_filenames
 
 

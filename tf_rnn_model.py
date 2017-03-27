@@ -45,6 +45,9 @@ import pdb
 
 # INCORPORATING TOPIC INFO AND CONTEXT FEATURES:
 # https://pdfs.semanticscholar.org/04e0/fefb859f4b02b017818915a2645427bfbdb2.pdf
+
+# RATIONALIZING NN Predictions
+# https://arxiv.org/pdf/1606.04155.pdf
 flags = tf.flags
 logging = tf.logging
 
